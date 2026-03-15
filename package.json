@@ -1,7 +1,7 @@
 {
   "name": "@sqaoss/flowy",
   "version": "0.1.0",
-  "description": "CLI for Flowy — project management for AI coding agents",
+  "description": "CLI for Flowy — project management for AI coding agents. NOTE: Registration is temporarily closed while in rapid development.",
   "type": "module",
   "bin": {
     "flowy": "./src/index.ts"

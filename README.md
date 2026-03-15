@@ -6,6 +6,8 @@ CLI for Flowy — project management for AI coding agents.
 [![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](LICENSE)
 [![CI](https://github.com/sqaoss/flowy/actions/workflows/ci.yml/badge.svg)](https://github.com/sqaoss/flowy/actions/workflows/ci.yml)
 
+> **Note:** Registration is temporarily closed while the project is in rapid development. Existing users are unaffected.
+
 ## What is Flowy
 
 Flowy is a hosted backend project management service built for AI coding agents. It uses a graph data model (nodes and edges) to represent projects, features, epics, and tasks with typed relationships between them. This package provides the CLI that agents use to interact with the Flowy API.
