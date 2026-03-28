@@ -1,6 +1,6 @@
 {
   "name": "@sqaoss/flowy",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "CLI for Flowy — project management for AI coding agents. NOTE: Registration is temporarily closed while in rapid development.",
   "type": "module",
   "bin": {
@@ -38,6 +38,8 @@
   "scripts": {
     "cli": "bun src/index.ts",
     "check": "biome check --write .",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
     "prepare": "husky"
   },
@@ -50,7 +52,9 @@
     "@commitlint/config-conventional": "^20.4.2",
     "husky": "^9.1.7",
     "lint-staged": "^16.3.0",
-    "typescript": "^5"
+    "tdd-guard-vitest": "^0.1.6",
+    "typescript": "^5",
+    "vitest": "^4.1.2"
   },
   "lint-staged": {
     "*.{ts,tsx,js,jsx}": [
