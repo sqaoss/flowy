@@ -1,26 +1,41 @@
-import { existsSync, readFileSync, rmSync } from 'node:fs'
+import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { resolve } from 'node:path'
-import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  test,
+  vi,
+} from 'vitest'
 
 const CONFIG_PATH = resolve(homedir(), '.config', 'flowy', 'config.json')
 
 describe('config', () => {
   let originalConfig: string | null = null
 
-  beforeEach(() => {
+  beforeAll(() => {
     originalConfig = existsSync(CONFIG_PATH)
       ? readFileSync(CONFIG_PATH, 'utf-8')
       : null
   })
 
-  afterEach(async () => {
+  afterAll(() => {
     if (originalConfig !== null) {
-      const { writeFileSync } = await import('node:fs')
       writeFileSync(CONFIG_PATH, originalConfig)
     } else if (existsSync(CONFIG_PATH)) {
       rmSync(CONFIG_PATH)
     }
+  })
+
+  beforeEach(() => {
+    if (existsSync(CONFIG_PATH)) rmSync(CONFIG_PATH)
+  })
+
+  afterEach(() => {
     delete process.env.FLOWY_PROJECT
     delete process.env.FLOWY_FEATURE
     vi.resetModules()
