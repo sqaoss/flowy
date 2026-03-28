@@ -12,11 +12,11 @@ Registration is currently closed. Existing API keys work.
 
 ```bash
 bun run cli -- <command>     # Run CLI locally (e.g. bun run cli -- whoami)
+bun run test                 # Run tests (Vitest)
+bunx vitest run src/util/config.test.ts  # Run a single test file
 bun run check                # Biome lint + format (auto-fixes)
 bun run typecheck            # TypeScript type checking
 ```
-
-There is no test suite. CI runs `biome check` and `typecheck` only.
 
 ## Architecture
 
