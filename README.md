@@ -10,7 +10,7 @@ CLI for Flowy — project management for AI coding agents.
 
 ## What is Flowy
 
-Flowy is a hosted backend project management service built for AI coding agents. It uses a graph data model (nodes and edges) to represent projects, features, epics, and tasks with typed relationships between them. This package provides the CLI that agents use to interact with the Flowy API.
+Flowy is a hosted backend project management service built for AI coding agents. It uses a strict hierarchy — **client → project → feature → task** — to organize work. This package provides the CLI that agents use to interact with the Flowy API.
 
 ## Quick Start
 
@@ -18,79 +18,109 @@ Flowy is a hosted backend project management service built for AI coding agents.
 # Install
 bun add -g @sqaoss/flowy    # or: npm i -g @sqaoss/flowy
 
-# Register and get your API key
-flowy register --email you@example.com
+# Set up (SaaS mode)
+flowy setup --mode saas --email you@example.com
 export FLOWY_API_KEY=flowy_xxx_yyy
 
-# Create a project
-flowy node create --type project --title "Auth System"
+# Set client name
+flowy client set name "Acme Corp"
 
-# Add tasks
-flowy node create --type task --title "Implement OAuth"
-flowy node create --type task --title "Write auth tests"
+# Create and activate a project
+flowy project create "Auth System"
+flowy project set "Auth System"
 
-# Link tasks to project
-flowy edge create --source <task-id> --target <project-id> --relation part_of
+# Plan a feature
+flowy feature create --title "SSO Support" --description sso-spec.md
+flowy feature set "SSO Support"
 
-# Track status
+# Create tasks
+flowy task create --title "Implement OAuth" --description oauth.md
+flowy task create --title "Write auth tests" --description "Unit + integration tests"
+
+# Track progress
 flowy status <task-id> in_progress
 flowy status <task-id> done
 
 # Search and explore
 flowy search "OAuth" --type task
-flowy tree subtree <project-id> --depth 3
+flowy tree <project-id> --depth 3
 ```
 
 ## Command Reference
 
 | Command | Description |
 |---------|-------------|
-| `register --email <email>` | Register and get API key |
+| `setup --mode <saas\|local> [--email] [--api-url] [--api-key]` | Configure CLI |
 | `whoami` | Show current user |
-| `node create --type <type> --title <title> [--description] [--status] [--metadata]` | Create node |
-| `node get --id <id>` | Get node |
-| `node list [--type] [--status] [--limit] [--offset]` | List nodes |
-| `node update --id <id> [--title] [--description] [--status] [--metadata]` | Update node |
-| `node delete --id <id>` | Delete node |
+| `client set name <name>` | Set client display name |
+| `project create <name>` | Create project |
+| `project set <name>` | Map current directory to project |
+| `project list` | List all projects |
+| `project show [<id>]` | Show project details |
+| `feature create --title <t> --description <d>` | Create feature (requires active project) |
+| `feature set <name-or-id>` | Set active feature |
+| `feature unset` | Clear active feature |
+| `feature list` | List features in active project |
+| `feature show [<id>]` | Show feature details |
+| `task create --title <t> --description <d>` | Create task (requires active feature) |
+| `task list` | List tasks in active feature |
+| `task show <id>` | Show task details |
+| `task block <id1> <id2>` | Mark task as blocking another |
+| `task unblock <id1> <id2>` | Remove block |
 | `status <id> <status>` | Update status (shorthand) |
-| `approve <id>` | Approve node (must be pending_review) |
-| `edge create --source <id> --target <id> --relation <rel>` | Create edge |
-| `edge list [--node <id>] [--relation <rel>]` | List edges |
-| `edge remove --source <id> --target <id> --relation <rel>` | Remove edge |
-| `search <query> [--type] [--status] [--limit]` | Search nodes |
-| `tree subtree <id> [--depth N]` | Show subtree |
-| `tree ancestors <id> [--depth N] [--relation <rel>]` | Show ancestors |
-| `tree descendants <id> [--depth N] [--relation <rel>]` | Show descendants |
+| `approve <id>` | Approve (must be pending_review) |
+| `search <query> [--type] [--status] [--limit]` | Search |
+| `tree <id> [--depth N]` | Show subtree |
 
 All commands output JSON.
 
 ## Data Model
 
-### Node Types
+### Entity Types
 
-`client`, `project`, `feature`, `epic`, `task`
+`client`, `project`, `feature`, `task`
 
-### Edge Relations
+### Hierarchy
 
-- `part_of` -- child belongs to parent
-- `depends_on` -- must complete before starting
-- `blocks` -- prevents progress on target
-- `informs` -- provides context to target
+```
+client → project → feature → task
+         1:many    1:many    1:many
+```
+
+No orphans — every entity must belong to its parent.
 
 ### Status Flow
 
 ```
-draft -> pending_review -> approved -> in_progress -> done
+draft → pending_review → approved → in_progress → done
 ```
 
 Also: `blocked`, `cancelled`
 
+### Description Field
+
+`--description` accepts a file path or inline string:
+- `--description spec.md` — reads file content
+- `--description "Do the thing"` — sends string as-is
+
 ## Configuration
+
+Config is stored at `~/.config/flowy/config.json`.
 
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `FLOWY_API_URL` | GraphQL endpoint | `https://flowy-ai.fly.dev/graphql` |
-| `FLOWY_API_KEY` | API key from register | -- |
+| `FLOWY_API_KEY` | API key from setup | -- |
+| `FLOWY_PROJECT` | Override active project by name | -- |
+| `FLOWY_FEATURE` | Override active feature by ID | -- |
+
+## Self-Hosted
+
+Flowy can run self-hosted via Docker Compose (server repo ships `docker-compose.yml`):
+
+```bash
+flowy setup --mode local --api-url http://localhost:4000/graphql
+```
 
 ## License
 
