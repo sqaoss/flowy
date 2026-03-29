@@ -1,5 +1,7 @@
 import { Database } from 'bun:sqlite'
 
+export type FlowyDb = ReturnType<typeof createDb>
+
 export function createDb(path: string) {
   const db = new Database(path)
 

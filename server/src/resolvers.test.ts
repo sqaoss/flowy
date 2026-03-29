@@ -1,6 +1,21 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { createDb, type FlowyDb } from './db.ts'
-import { createResolvers } from './resolvers.ts'
+import { createResolvers, type NodeGql } from './resolvers.ts'
+
+// Helper to create a node (always succeeds, typed non-null)
+function create(
+  r: ReturnType<typeof createResolvers>,
+  args: { type: string; title: string; description?: string },
+): NodeGql {
+  return r.Mutation.createNode(null, args)
+}
+
+// Helper to find a node (throws if not found, for tests only)
+function find(r: ReturnType<typeof createResolvers>, id: string): NodeGql {
+  const node = r.Query.node(null, { id })
+  if (!node) throw new Error(`Test helper: node ${id} not found`)
+  return node
+}
 
 describe('createResolvers', () => {
   let db: FlowyDb

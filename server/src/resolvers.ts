@@ -1,7 +1,29 @@
 import { nanoid } from 'nanoid'
-import type { createDb } from './db.ts'
+import type { FlowyDb } from './db.ts'
 
-type Db = ReturnType<typeof createDb>
+type Db = FlowyDb
+
+interface NodeRow {
+  id: string
+  type: string
+  title: string
+  description: string | null
+  status: string
+  metadata: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface NodeGql {
+  id: string
+  type: string
+  title: string
+  description: string | null
+  status: string
+  metadata: string | null
+  createdAt: string
+  updatedAt: string
+}
 
 const NODE_COLS =
   'id, type, title, description, status, metadata, created_at, updated_at'
@@ -17,7 +39,7 @@ function generateId(type: string): string {
   return `${prefix}_${nanoid(12)}`
 }
 
-function rowToNode(row: Record<string, unknown>) {
+function rowToNode(row: NodeRow): NodeGql {
   return {
     id: row.id,
     type: row.type,
@@ -30,14 +52,14 @@ function rowToNode(row: Record<string, unknown>) {
   }
 }
 
-function selectNode(db: Db, id: string) {
+function selectNode(db: Db, id: string): NodeGql | null {
   const row = db.raw
     .query(`SELECT ${NODE_COLS} FROM nodes WHERE id = ?`)
-    .get(id) as Record<string, unknown> | null
+    .get(id) as NodeRow | null
   return row ? rowToNode(row) : null
 }
 
-function selectNodes(rows: Record<string, unknown>[]) {
+function selectNodes(rows: NodeRow[]): NodeGql[] {
   return rows.map(rowToNode)
 }
 
@@ -56,7 +78,7 @@ export function createResolvers(db: Db) {
 
       nodes: (_: unknown, args: { type?: string }) => {
         const conditions: string[] = []
-        const params: unknown[] = []
+        const params: string[] = []
         if (args.type) {
           conditions.push('type = ?')
           params.push(args.type)
@@ -65,7 +87,7 @@ export function createResolvers(db: Db) {
           conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : ''
         const rows = db.raw
           .query(`SELECT ${NODE_COLS} FROM nodes ${where}`)
-          .all(...params) as Record<string, unknown>[]
+          .all(...params) as NodeRow[]
         return selectNodes(rows)
       },
 
@@ -74,7 +96,7 @@ export function createResolvers(db: Db) {
         args: { nodeId: string; relation?: string; maxDepth?: number },
       ) => {
         const maxDepth = args.maxDepth ?? 100
-        let rows: Record<string, unknown>[]
+        let rows: NodeRow[]
         if (args.relation) {
           rows = db.raw
             .query(
@@ -86,10 +108,7 @@ export function createResolvers(db: Db) {
               )
               SELECT DISTINCT ${prefixedCols()} FROM nodes n JOIN tree t ON n.id = t.id`,
             )
-            .all(args.nodeId, maxDepth, args.relation) as Record<
-            string,
-            unknown
-          >[]
+            .all(args.nodeId, maxDepth, args.relation) as NodeRow[]
         } else {
           rows = db.raw
             .query(
@@ -101,7 +120,7 @@ export function createResolvers(db: Db) {
               )
               SELECT DISTINCT ${prefixedCols()} FROM nodes n JOIN tree t ON n.id = t.id`,
             )
-            .all(args.nodeId, maxDepth) as Record<string, unknown>[]
+            .all(args.nodeId, maxDepth) as NodeRow[]
         }
         return selectNodes(rows)
       },
@@ -118,7 +137,7 @@ export function createResolvers(db: Db) {
             )
             SELECT DISTINCT ${prefixedCols()} FROM nodes n JOIN tree t ON n.id = t.id`,
           )
-          .all(args.nodeId, maxDepth) as Record<string, unknown>[]
+          .all(args.nodeId, maxDepth) as NodeRow[]
         return selectNodes(rows)
       },
 
@@ -132,7 +151,10 @@ export function createResolvers(db: Db) {
         },
       ) => {
         const conditions = ['(title LIKE ? OR description LIKE ?)']
-        const params: unknown[] = [`%${args.query}%`, `%${args.query}%`]
+        const params: (string | number)[] = [
+          `%${args.query}%`,
+          `%${args.query}%`,
+        ]
         if (args.type) {
           conditions.push('type = ?')
           params.push(args.type)
@@ -146,7 +168,7 @@ export function createResolvers(db: Db) {
           .query(
             `SELECT ${NODE_COLS} FROM nodes WHERE ${conditions.join(' AND ')} LIMIT ?`,
           )
-          .all(...params, limit) as Record<string, unknown>[]
+          .all(...params, limit) as NodeRow[]
         return selectNodes(rows)
       },
     },
@@ -155,43 +177,45 @@ export function createResolvers(db: Db) {
       createNode: (
         _: unknown,
         args: { type: string; title: string; description?: string },
-      ) => {
+      ): NodeGql => {
         const id = generateId(args.type)
         const now = new Date().toISOString()
+        const description = args.description ?? null
         db.raw.run(
           'INSERT INTO nodes (id, type, title, description, status, metadata, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-          [
-            id,
-            args.type,
-            args.title,
-            args.description ?? null,
-            'draft',
-            null,
-            now,
-            now,
-          ],
+          [id, args.type, args.title, description, 'draft', null, now, now],
         )
-        return selectNode(db, id)
+        return {
+          id,
+          type: args.type,
+          title: args.title,
+          description,
+          status: 'draft',
+          metadata: null,
+          createdAt: now,
+          updatedAt: now,
+        }
       },
 
       updateNode: (_: unknown, args: { id: string; status?: string }) => {
         const existing = db.raw
           .query('SELECT * FROM nodes WHERE id = ?')
-          .get(args.id) as Record<string, unknown> | null
+          .get(args.id) as NodeRow | null
         if (!existing) throw new Error(`Node ${args.id} not found`)
         const now = new Date().toISOString()
+        const newStatus = args.status ?? existing.status
         db.raw.run('UPDATE nodes SET status = ?, updated_at = ? WHERE id = ?', [
-          args.status ?? existing.status,
+          newStatus,
           now,
           args.id,
         ])
-        return selectNode(db, args.id)
+        return rowToNode({ ...existing, status: newStatus, updated_at: now })
       },
 
       approveNode: (_: unknown, args: { id: string }) => {
         const existing = db.raw
           .query('SELECT * FROM nodes WHERE id = ?')
-          .get(args.id) as Record<string, unknown> | null
+          .get(args.id) as NodeRow | null
         if (!existing) throw new Error(`Node ${args.id} not found`)
         if (existing.status !== 'pending_review') {
           throw new Error(
@@ -204,7 +228,7 @@ export function createResolvers(db: Db) {
           now,
           args.id,
         ])
-        return selectNode(db, args.id)
+        return rowToNode({ ...existing, status: 'approved', updated_at: now })
       },
 
       createEdge: (
