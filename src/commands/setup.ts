@@ -85,7 +85,12 @@ setupCommand
       config.apiUrl = 'https://flowy-ai.fly.dev/graphql'
       saveConfig(config)
 
-      const data = await graphql(
+      const data = await graphql<{
+        register: {
+          user: { id: string; email: string; tier: string }
+          apiKey: string
+        }
+      }>(
         `mutation Register($email: String!) {
           register(email: $email) {
             user { id email tier }
