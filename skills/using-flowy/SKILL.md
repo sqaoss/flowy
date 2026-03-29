@@ -1,8 +1,17 @@
 ---
 name: using-flowy
 description: Project management CLI for AI coding agents — create projects, features, tasks, track status and approvals
-license: Apache-2.0
-compatibility: "Bun 1.3+"
+metadata:
+  sources:
+    - src/commands/project.ts
+    - src/commands/feature.ts
+    - src/commands/task.ts
+    - src/commands/status.ts
+    - src/commands/approve.ts
+    - src/commands/search.ts
+    - src/commands/tree.ts
+    - src/commands/setup.ts
+    - src/util/config.ts
 ---
 
 # Flowy — Project Management for AI Agents

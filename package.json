@@ -9,7 +9,8 @@
   "files": [
     "src/",
     "server/",
-    "skills/",
+    "skills",
+    "!skills/_artifacts",
     "docker-compose.yml",
     "LICENSE",
     "README.md"
@@ -36,7 +37,8 @@
     "coding-agent",
     "ai-agents",
     "graphql",
-    "bun"
+    "bun",
+    "tanstack-intent"
   ],
   "scripts": {
     "cli": "bun src/index.ts",
@@ -51,6 +53,7 @@
   },
   "devDependencies": {
     "@biomejs/biome": "2.4.4",
+    "@tanstack/intent": "^0.0.23",
     "@commitlint/cli": "^20.4.2",
     "@commitlint/config-conventional": "^20.4.2",
     "husky": "^9.1.7",
