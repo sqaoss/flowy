@@ -4,7 +4,7 @@ let mockLoadConfig: ReturnType<typeof vi.fn>
 let mockSaveConfig: ReturnType<typeof vi.fn>
 let mockOutput: ReturnType<typeof vi.fn>
 let mockOutputError: ReturnType<typeof vi.fn>
-let mockGraphql: ReturnType<typeof vi.fn>
+let mockSpawnSync: ReturnType<typeof vi.fn>
 
 beforeEach(() => {
   mockLoadConfig = vi.fn(() => ({
@@ -17,7 +17,7 @@ beforeEach(() => {
   mockSaveConfig = vi.fn()
   mockOutput = vi.fn()
   mockOutputError = vi.fn()
-  mockGraphql = vi.fn()
+  mockSpawnSync = vi.fn()
 
   vi.doMock('../util/config.ts', () => ({
     loadConfig: mockLoadConfig,
@@ -29,8 +29,8 @@ beforeEach(() => {
     outputError: mockOutputError,
   }))
 
-  vi.doMock('../util/client.ts', () => ({
-    graphql: mockGraphql,
+  vi.doMock('node:child_process', () => ({
+    spawnSync: mockSpawnSync,
   }))
 })
 
@@ -45,37 +45,40 @@ describe('setup command', () => {
     expect(setupCommand.name()).toBe('setup')
   })
 
-  test('has --mode, --email, --api-url, and --api-key options', async () => {
+  test('has local and remote subcommands', async () => {
     const { setupCommand } = await import('./setup.ts')
-    const optionNames = setupCommand.options.map((o) => o.long)
-    expect(optionNames).toContain('--mode')
-    expect(optionNames).toContain('--email')
-    expect(optionNames).toContain('--api-url')
-    expect(optionNames).toContain('--api-key')
+    const subcommandNames = setupCommand.commands.map((c) => c.name())
+    expect(subcommandNames).toContain('local')
+    expect(subcommandNames).toContain('remote')
+    expect(setupCommand.commands).toHaveLength(2)
   })
 
-  test('--api-key saves the key to config', async () => {
-    const { setupCommand } = await import('./setup.ts')
+  test('setup local checks for docker and errors if not found', async () => {
+    mockSpawnSync.mockReturnValue({ status: 1 })
 
-    await setupCommand.parseAsync(['--api-key', 'test-key-123'], {
-      from: 'user',
+    const { setupCommand } = await import('./setup.ts')
+    await setupCommand.parseAsync(['local'], { from: 'user' })
+
+    expect(mockSpawnSync).toHaveBeenCalledWith('docker', ['--version'], {
+      stdio: 'ignore',
+    })
+    expect(mockOutputError).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: expect.stringContaining('Docker is required'),
+      }),
+    )
+  })
+
+  test('setup local saves config with mode "local" and apiUrl on success', async () => {
+    mockSpawnSync.mockReturnValue({ status: 0 })
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true }))
+    vi.doMock('node:fs', async () => {
+      const actual = await vi.importActual<typeof import('node:fs')>('node:fs')
+      return { ...actual, existsSync: () => true }
     })
 
-    expect(mockSaveConfig).toHaveBeenCalledWith(
-      expect.objectContaining({ apiKey: 'test-key-123' }),
-    )
-    expect(mockOutput).toHaveBeenCalledWith(
-      expect.objectContaining({ apiKey: 'test-key-123' }),
-    )
-  })
-
-  test('--mode local --api-url saves the apiUrl and mode to config', async () => {
     const { setupCommand } = await import('./setup.ts')
-
-    await setupCommand.parseAsync(
-      ['--mode', 'local', '--api-url', 'http://localhost:4000/graphql'],
-      { from: 'user' },
-    )
+    await setupCommand.parseAsync(['local'], { from: 'user' })
 
     expect(mockSaveConfig).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -83,32 +86,15 @@ describe('setup command', () => {
         apiUrl: 'http://localhost:4000/graphql',
       }),
     )
+  })
+
+  test('setup remote prints not-yet-implemented message', async () => {
+    const { setupCommand } = await import('./setup.ts')
+    await setupCommand.parseAsync(['remote'], { from: 'user' })
+
     expect(mockOutput).toHaveBeenCalledWith(
       expect.objectContaining({
-        mode: 'local',
-        apiUrl: 'http://localhost:4000/graphql',
-      }),
-    )
-  })
-
-  test('--mode saas without --email calls outputError', async () => {
-    const { setupCommand } = await import('./setup.ts')
-
-    await setupCommand.parseAsync(['--mode', 'saas'], { from: 'user' })
-
-    expect(mockOutputError).toHaveBeenCalledWith(
-      expect.objectContaining({ message: expect.stringContaining('--email') }),
-    )
-  })
-
-  test('no arguments calls outputError with usage hint', async () => {
-    const { setupCommand } = await import('./setup.ts')
-
-    await setupCommand.parseAsync([], { from: 'user' })
-
-    expect(mockOutputError).toHaveBeenCalledWith(
-      expect.objectContaining({
-        message: expect.stringContaining('--mode'),
+        message: expect.stringContaining('not yet implemented'),
       }),
     )
   })
