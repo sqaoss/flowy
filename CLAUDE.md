@@ -36,7 +36,7 @@ src/util/client.ts        # graphql() — single fetch-based GraphQL client
 src/util/config.ts        # Config loading, context resolution (project, feature)
 src/util/description.ts   # Resolve --description from file path or inline string
 src/util/format.ts        # output() and outputError() — JSON to stdout/stderr
-skills/SKILL.md           # Skill file for AI agents to learn the CLI
+skills/using-flowy/SKILL.md  # Skill file (TanStack Intent compatible)
 ```
 
 ### Entity hierarchy

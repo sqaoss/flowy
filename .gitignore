@@ -35,3 +35,15 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 
 # Biome
 .biome/
+
+# SQLite
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+*.db
+
+# Git worktrees
+.worktrees/
+
+# TDD guard local state
+.claude/tdd-guard/
