@@ -8,8 +8,10 @@
   },
   "files": [
     "src/",
-    "server/",
-    "skills",
+    "server/src/",
+    "server/package.json",
+    "server/Dockerfile",
+    "skills/",
     "!skills/_artifacts",
     "docker-compose.yml",
     "LICENSE",
