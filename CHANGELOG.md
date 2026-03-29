@@ -1,3 +1,10 @@
+## [1.1.1](https://github.com/sqaoss/flowy/compare/v1.1.0...v1.1.1) (2026-03-29)
+
+
+### Bug Fixes
+
+* add type parameter to graphql call in setup remote ([2134064](https://github.com/sqaoss/flowy/commit/213406439f63d349bc0fd31a0b158d4a81341ae6))
+
 # [1.1.0](https://github.com/sqaoss/flowy/compare/v1.0.2...v1.1.0) (2026-03-29)
 
 
