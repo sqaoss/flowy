@@ -1,3 +1,10 @@
+## [1.1.3](https://github.com/sqaoss/flowy/compare/v1.1.2...v1.1.3) (2026-03-29)
+
+
+### Bug Fixes
+
+* install agent skill during setup local ([929d068](https://github.com/sqaoss/flowy/commit/929d068d16daff4e4dda37a271b1ca33cbd8695b))
+
 ## [1.1.2](https://github.com/sqaoss/flowy/compare/v1.1.1...v1.1.2) (2026-03-29)
 
 
