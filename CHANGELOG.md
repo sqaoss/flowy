@@ -1,3 +1,12 @@
+## [1.1.2](https://github.com/sqaoss/flowy/compare/v1.1.1...v1.1.2) (2026-03-29)
+
+
+### Bug Fixes
+
+* make setup local work from any directory without local files ([431f4ff](https://github.com/sqaoss/flowy/commit/431f4ff0b12050497b270d06750b4c21d6481c75))
+* organize imports for biome lint ([48cffcf](https://github.com/sqaoss/flowy/commit/48cffcf67b14f9e7b2af257c01e891b13b8835f0))
+* read CLI version from package.json instead of hardcoding ([caa6e03](https://github.com/sqaoss/flowy/commit/caa6e0351c6279a0ad47a6727c451d38d9556d23))
+
 ## [1.1.1](https://github.com/sqaoss/flowy/compare/v1.1.0...v1.1.1) (2026-03-29)
 
 
