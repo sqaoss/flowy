@@ -47,3 +47,6 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 
 # TDD guard local state
 .claude/tdd-guard/
+
+# Superpowers specs/plans (local tooling artifacts)
+docs/superpowers/
