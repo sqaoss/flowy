@@ -4,8 +4,13 @@ import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { Command } from 'commander'
 
-const pkgPath = resolve(dirname(fileURLToPath(import.meta.url)), '..', 'package.json')
+const pkgPath = resolve(
+  dirname(fileURLToPath(import.meta.url)),
+  '..',
+  'package.json',
+)
 const pkg = JSON.parse(readFileSync(pkgPath, 'utf-8'))
+
 import { approveCommand } from './commands/approve.ts'
 import { clientCommand } from './commands/client.ts'
 import { featureCommand } from './commands/feature.ts'
