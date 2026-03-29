@@ -8,6 +8,9 @@
   },
   "files": [
     "src/",
+    "server/",
+    "skills/",
+    "docker-compose.yml",
     "LICENSE",
     "README.md"
   ],
