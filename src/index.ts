@@ -1,5 +1,11 @@
 #!/usr/bin/env bun
+import { readFileSync } from 'node:fs'
+import { dirname, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { Command } from 'commander'
+
+const pkgPath = resolve(dirname(fileURLToPath(import.meta.url)), '..', 'package.json')
+const pkg = JSON.parse(readFileSync(pkgPath, 'utf-8'))
 import { approveCommand } from './commands/approve.ts'
 import { clientCommand } from './commands/client.ts'
 import { featureCommand } from './commands/feature.ts'
@@ -14,8 +20,8 @@ import { whoamiCommand } from './commands/whoami.ts'
 
 const program = new Command()
   .name('flowy')
-  .description('Project management for AI coding agents')
-  .version('0.2.0')
+  .description(pkg.description)
+  .version(pkg.version)
 
 program.addCommand(initCommand)
 program.addCommand(setupCommand)
