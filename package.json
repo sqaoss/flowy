@@ -1,6 +1,6 @@
 {
   "name": "@sqaoss/flowy",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "CLI for Flowy — project management for AI coding agents",
   "type": "module",
   "bin": {

@@ -1,3 +1,10 @@
+## [1.0.1](https://github.com/sqaoss/flowy/compare/v1.0.0...v1.0.1) (2026-03-29)
+
+
+### Bug Fixes
+
+* **ci:** move permissions to job level and remove NPM_TOKEN ([f498a51](https://github.com/sqaoss/flowy/commit/f498a51038e1771273f803745be7f6c86fc382e9))
+
 # 1.0.0 (2026-03-29)
 
 
