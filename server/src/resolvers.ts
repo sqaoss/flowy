@@ -34,6 +34,16 @@ const PREFIX_MAP: Record<string, string> = {
   task: 'task',
 }
 
+const VALID_STATUSES = new Set([
+  'draft',
+  'pending_review',
+  'approved',
+  'in_progress',
+  'done',
+  'blocked',
+  'cancelled',
+])
+
 function generateId(type: string): string {
   const prefix = PREFIX_MAP[type] ?? type
   return `${prefix}_${nanoid(12)}`
@@ -96,6 +106,7 @@ export function createResolvers(db: Db) {
         args: { nodeId: string; relation?: string; maxDepth?: number },
       ) => {
         const maxDepth = args.maxDepth ?? 100
+        if (maxDepth === 0) return []
         let rows: NodeRow[]
         if (args.relation) {
           rows = db.raw
@@ -127,6 +138,7 @@ export function createResolvers(db: Db) {
 
       subtree: (_: unknown, args: { nodeId: string; maxDepth?: number }) => {
         const maxDepth = args.maxDepth ?? 100
+        if (maxDepth === 0) return []
         const rows = db.raw
           .query(
             `WITH RECURSIVE tree(id, depth) AS (
@@ -150,11 +162,14 @@ export function createResolvers(db: Db) {
           limit?: number
         },
       ) => {
-        const conditions = ['(title LIKE ? OR description LIKE ?)']
-        const params: (string | number)[] = [
-          `%${args.query}%`,
-          `%${args.query}%`,
+        if (args.query.trim().length < 3) {
+          throw new Error('Search query must be at least 3 characters')
+        }
+        const escaped = args.query.replace(/[%_\\]/g, '\\$&')
+        const conditions = [
+          "(title LIKE ? ESCAPE '\\' OR description LIKE ? ESCAPE '\\')",
         ]
+        const params: (string | number)[] = [`%${escaped}%`, `%${escaped}%`]
         if (args.type) {
           conditions.push('type = ?')
           params.push(args.type)
@@ -178,6 +193,10 @@ export function createResolvers(db: Db) {
         _: unknown,
         args: { type: string; title: string; description?: string },
       ): NodeGql => {
+        if (!args.title.trim()) throw new Error('Title is required')
+        if (args.description != null && !args.description.trim()) {
+          throw new Error('Description cannot be empty')
+        }
         const id = generateId(args.type)
         const now = new Date().toISOString()
         const description = args.description ?? null
@@ -202,8 +221,13 @@ export function createResolvers(db: Db) {
           .query('SELECT * FROM nodes WHERE id = ?')
           .get(args.id) as NodeRow | null
         if (!existing) throw new Error(`Node ${args.id} not found`)
-        const now = new Date().toISOString()
         const newStatus = args.status ?? existing.status
+        if (args.status && !VALID_STATUSES.has(args.status)) {
+          throw new Error(
+            `Invalid status: ${args.status}. Must be one of: ${[...VALID_STATUSES].join(', ')}`,
+          )
+        }
+        const now = new Date().toISOString()
         db.raw.run('UPDATE nodes SET status = ?, updated_at = ? WHERE id = ?', [
           newStatus,
           now,
@@ -235,6 +259,27 @@ export function createResolvers(db: Db) {
         _: unknown,
         args: { sourceId: string; targetId: string; relation: string },
       ) => {
+        const validRelations = new Set(['part_of', 'blocks'])
+        if (!validRelations.has(args.relation)) {
+          throw new Error(
+            `Invalid relation: ${args.relation}. Must be 'part_of' or 'blocks'`,
+          )
+        }
+        const sourceExists = db.raw
+          .query('SELECT id FROM nodes WHERE id = ?')
+          .get(args.sourceId)
+        if (!sourceExists) {
+          throw new Error(`Source node ${args.sourceId} not found`)
+        }
+        const targetExists = db.raw
+          .query('SELECT id FROM nodes WHERE id = ?')
+          .get(args.targetId)
+        if (!targetExists) {
+          throw new Error(`Target node ${args.targetId} not found`)
+        }
+        if (args.relation === 'blocks' && args.sourceId === args.targetId) {
+          throw new Error('A node cannot block itself')
+        }
         const now = new Date().toISOString()
         db.raw.run(
           'INSERT INTO edges (source_id, target_id, relation, created_at) VALUES (?, ?, ?, ?)',

@@ -478,6 +478,30 @@ describe('createResolvers', () => {
     })
   })
 
+  describe('Mutation.createNode — title and description validation', () => {
+    it('throws on empty title', () => {
+      expect(() =>
+        resolvers.Mutation.createNode(null, { type: 'task', title: '' }),
+      ).toThrow('Title is required')
+    })
+
+    it('throws on whitespace-only title', () => {
+      expect(() =>
+        resolvers.Mutation.createNode(null, { type: 'task', title: '   ' }),
+      ).toThrow('Title is required')
+    })
+
+    it('throws on empty description', () => {
+      expect(() =>
+        resolvers.Mutation.createNode(null, {
+          type: 'task',
+          title: 'Valid',
+          description: '',
+        }),
+      ).toThrow('Description cannot be empty')
+    })
+  })
+
   describe('Mutation.createNode — input validation', () => {
     it('throws on invalid type', () => {
       expect(() =>
@@ -490,14 +514,16 @@ describe('createResolvers', () => {
   })
 
   describe('Mutation.updateNode — input validation', () => {
-    it('throws on invalid status', () => {
+    it('throws on invalid status with friendly message', () => {
       const node = create(resolvers, { type: 'task', title: 'Test' })
       expect(() =>
         resolvers.Mutation.updateNode(null, {
           id: node.id,
           status: 'invalid_status',
         }),
-      ).toThrow()
+      ).toThrow(
+        'Invalid status: invalid_status. Must be one of: draft, pending_review, approved, in_progress, done, blocked, cancelled',
+      )
     })
 
     it('keeps current status when status is omitted', () => {
@@ -568,19 +594,38 @@ describe('createResolvers', () => {
       expect(results).toEqual([])
     })
 
-    it('returns all nodes when query is empty string', () => {
-      create(resolvers, { type: 'project', title: 'Alpha' })
-      create(resolvers, { type: 'feature', title: 'Beta' })
-      const results = resolvers.Query.search(null, { query: '' })
-      expect(results).toHaveLength(2)
+    it('throws when query is shorter than 3 characters', () => {
+      expect(() => resolvers.Query.search(null, { query: '' })).toThrow(
+        'Search query must be at least 3 characters',
+      )
+      expect(() => resolvers.Query.search(null, { query: 'a' })).toThrow(
+        'Search query must be at least 3 characters',
+      )
+      expect(() => resolvers.Query.search(null, { query: 'ab' })).toThrow(
+        'Search query must be at least 3 characters',
+      )
     })
 
-    it('treats LIKE wildcards in query as literal characters', () => {
+    it('succeeds with 3-character query', () => {
+      create(resolvers, { type: 'project', title: 'abc match' })
+      const results = resolvers.Query.search(null, { query: 'abc' })
+      expect(results).toHaveLength(1)
+    })
+
+    it('does not treat % as LIKE wildcard', () => {
       create(resolvers, { type: 'project', title: '100% done' })
-      create(resolvers, { type: 'project', title: 'totally done' })
+      create(resolvers, { type: 'project', title: '100 things' })
       const results = resolvers.Query.search(null, { query: '100%' })
       expect(results).toHaveLength(1)
       expect(results[0].title).toBe('100% done')
+    })
+
+    it('does not treat _ as LIKE wildcard', () => {
+      create(resolvers, { type: 'project', title: '_est something' })
+      create(resolvers, { type: 'project', title: 'Test something' })
+      const results = resolvers.Query.search(null, { query: '_est' })
+      expect(results).toHaveLength(1)
+      expect(results[0].title).toBe('_est something')
     })
   })
 
@@ -677,18 +722,12 @@ describe('createResolvers', () => {
       expect(result).toEqual([])
     })
 
-    it('returns direct children even with maxDepth 0 (CTE base case)', () => {
+    it('returns empty array when maxDepth is 0', () => {
       const project = create(resolvers, { type: 'project', title: 'Root' })
       const feature = create(resolvers, { type: 'feature', title: 'Child' })
-      const task = create(resolvers, { type: 'task', title: 'Grandchild' })
       resolvers.Mutation.createEdge(null, {
         sourceId: feature.id,
         targetId: project.id,
-        relation: 'part_of',
-      })
-      resolvers.Mutation.createEdge(null, {
-        sourceId: task.id,
-        targetId: feature.id,
         relation: 'part_of',
       })
       const result = resolvers.Query.descendants(null, {
@@ -696,9 +735,7 @@ describe('createResolvers', () => {
         relation: 'part_of',
         maxDepth: 0,
       })
-      // maxDepth=0 still returns direct children due to CTE base case starting at depth=1
-      expect(result).toHaveLength(1)
-      expect(result[0].id).toBe(feature.id)
+      expect(result).toEqual([])
     })
 
     it('traverses blocks relation', () => {
@@ -736,15 +773,49 @@ describe('createResolvers', () => {
       ).toThrow()
     })
 
-    it('allows self-referencing edge', () => {
+    it('throws when source node does not exist', () => {
+      const target = create(resolvers, { type: 'project', title: 'Target' })
+      expect(() =>
+        resolvers.Mutation.createEdge(null, {
+          sourceId: 'nonexistent_id',
+          targetId: target.id,
+          relation: 'part_of',
+        }),
+      ).toThrow('Source node nonexistent_id not found')
+    })
+
+    it('throws when target node does not exist', () => {
+      const source = create(resolvers, { type: 'feature', title: 'Source' })
+      expect(() =>
+        resolvers.Mutation.createEdge(null, {
+          sourceId: source.id,
+          targetId: 'nonexistent_id',
+          relation: 'part_of',
+        }),
+      ).toThrow('Target node nonexistent_id not found')
+    })
+
+    it('throws on invalid relation', () => {
+      const a = create(resolvers, { type: 'project', title: 'A' })
+      const b = create(resolvers, { type: 'feature', title: 'B' })
+      expect(() =>
+        resolvers.Mutation.createEdge(null, {
+          sourceId: b.id,
+          targetId: a.id,
+          relation: 'depends_on',
+        }),
+      ).toThrow("Invalid relation: depends_on. Must be 'part_of' or 'blocks'")
+    })
+
+    it('throws on self-blocking edge', () => {
       const node = create(resolvers, { type: 'task', title: 'Self' })
-      const edge = resolvers.Mutation.createEdge(null, {
-        sourceId: node.id,
-        targetId: node.id,
-        relation: 'blocks',
-      })
-      expect(edge.sourceId).toBe(node.id)
-      expect(edge.targetId).toBe(node.id)
+      expect(() =>
+        resolvers.Mutation.createEdge(null, {
+          sourceId: node.id,
+          targetId: node.id,
+          relation: 'blocks',
+        }),
+      ).toThrow('A node cannot block itself')
     })
   })
 
@@ -755,27 +826,19 @@ describe('createResolvers', () => {
       expect(result).toEqual([])
     })
 
-    it('returns direct children with maxDepth 0 (CTE base case)', () => {
+    it('returns empty array when maxDepth is 0', () => {
       const project = create(resolvers, { type: 'project', title: 'Root' })
       const feature = create(resolvers, { type: 'feature', title: 'Child' })
-      const task = create(resolvers, { type: 'task', title: 'Grandchild' })
       resolvers.Mutation.createEdge(null, {
         sourceId: feature.id,
         targetId: project.id,
-        relation: 'part_of',
-      })
-      resolvers.Mutation.createEdge(null, {
-        sourceId: task.id,
-        targetId: feature.id,
         relation: 'part_of',
       })
       const result = resolvers.Query.subtree(null, {
         nodeId: project.id,
         maxDepth: 0,
       })
-      // Same CTE behavior as descendants — base case starts at depth=1
-      expect(result).toHaveLength(1)
-      expect(result[0].id).toBe(feature.id)
+      expect(result).toEqual([])
     })
   })
 
