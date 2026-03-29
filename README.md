@@ -1,31 +1,32 @@
 # Flowy
 
-CLI for Flowy — project management for AI coding agents.
+Project management for AI coding agents.
 
 [![npm](https://img.shields.io/npm/v/@sqaoss/flowy)](https://www.npmjs.com/package/@sqaoss/flowy)
-[![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](LICENSE)
+[![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE)
 [![CI](https://github.com/sqaoss/flowy/actions/workflows/ci.yml/badge.svg)](https://github.com/sqaoss/flowy/actions/workflows/ci.yml)
-
-> **Note:** Registration is temporarily closed while the project is in rapid development. Existing users are unaffected.
 
 ## What is Flowy
 
-Flowy is a hosted backend project management service built for AI coding agents. It uses a strict hierarchy — **client → project → feature → task** — to organize work. This package provides the CLI that agents use to interact with the Flowy API.
+Flowy is a backend + CLI that gives AI coding agents structured project management. It enforces a strict hierarchy -- **client -> project -> feature -> task** -- so agents always have clear context about what they're working on.
 
-## Quick Start
+Run it locally with SQLite and Docker, or connect to the hosted SaaS for multi-agent team collaboration.
+
+## Quick Start (Local Mode)
+
+Local mode runs a Flowy server on your machine using Docker. No account needed.
 
 ```bash
 # Install
 bun add -g @sqaoss/flowy    # or: npm i -g @sqaoss/flowy
 
-# Set up (SaaS mode)
-flowy setup --mode saas --email you@example.com
-export FLOWY_API_KEY=flowy_xxx_yyy
+# Start the local server (requires Docker)
+flowy setup local
 
-# Set client name
+# Set your client name
 flowy client set name "Acme Corp"
 
-# Create and activate a project
+# Create a project and map it to the current directory
 flowy project create "Auth System"
 flowy project set "Auth System"
 
@@ -46,11 +47,16 @@ flowy search "OAuth" --type task
 flowy tree <project-id> --depth 3
 ```
 
+## Remote Mode (Coming Soon)
+
+Remote mode connects to the hosted Flowy SaaS for multi-agent collaboration, shared project state across teams, and persistent history. Registration and API key setup will happen directly through the CLI -- no website needed. This is currently a work in progress.
+
 ## Command Reference
 
 | Command | Description |
 |---------|-------------|
-| `setup --mode <saas\|local> [--email] [--api-url] [--api-key]` | Configure CLI |
+| `setup local` | Start a local Docker server and configure the CLI |
+| `setup remote` | Connect to the hosted SaaS (coming soon) |
 | `whoami` | Show current user |
 | `client set name <name>` | Set client display name |
 | `project create <name>` | Create project |
@@ -69,39 +75,35 @@ flowy tree <project-id> --depth 3
 | `task unblock <id1> <id2>` | Remove block |
 | `status <id> <status>` | Update status (shorthand) |
 | `approve <id>` | Approve (must be pending_review) |
-| `search <query> [--type] [--status] [--limit]` | Search |
+| `search <query> [--type] [--status] [--limit]` | Full-text search |
 | `tree <id> [--depth N]` | Show subtree |
 
-All commands output JSON.
+All commands output JSON to stdout.
 
 ## Data Model
 
-### Entity Types
-
-`client`, `project`, `feature`, `task`
-
-### Hierarchy
+### Entity Hierarchy
 
 ```
-client → project → feature → task
-         1:many    1:many    1:many
+client -> project -> feature -> task
+           1:many    1:many    1:many
 ```
 
-No orphans — every entity must belong to its parent.
+Every entity belongs to its parent. No orphans.
 
 ### Status Flow
 
 ```
-draft → pending_review → approved → in_progress → done
+draft -> pending_review -> approved -> in_progress -> done
 ```
 
 Also: `blocked`, `cancelled`
 
 ### Description Field
 
-`--description` accepts a file path or inline string:
-- `--description spec.md` — reads file content
-- `--description "Do the thing"` — sends string as-is
+`--description` accepts a file path or an inline string:
+- `--description spec.md` -- reads file content
+- `--description "Do the thing"` -- sends string as-is
 
 ## Configuration
 
@@ -109,21 +111,32 @@ Config is stored at `~/.config/flowy/config.json`.
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `FLOWY_API_URL` | GraphQL endpoint | `https://flowy-ai.fly.dev/graphql` |
-| `FLOWY_API_KEY` | API key from setup | -- |
+| `FLOWY_API_URL` | GraphQL endpoint | `http://localhost:4000/graphql` |
+| `FLOWY_API_KEY` | API key (remote mode only) | -- |
 | `FLOWY_PROJECT` | Override active project by name | -- |
 | `FLOWY_FEATURE` | Override active feature by ID | -- |
 
-## Self-Hosted
+## For AI Agents
 
-Flowy can run self-hosted via Docker Compose (server repo ships `docker-compose.yml`):
+Flowy integrates with [TanStack Intent](https://github.com/TanStack/intent) for automatic tool discovery. Run:
 
 ```bash
-flowy setup --mode local --api-url http://localhost:4000/graphql
+npx @tanstack/intent install
+```
+
+This auto-discovers the Flowy skill and makes it available to your agent. See [`skills/using-flowy/SKILL.md`](skills/using-flowy/SKILL.md) for the full skill reference.
+
+## Development
+
+```bash
+bun run test          # Run CLI tests (Vitest)
+bun run check         # Biome lint + format
+bun run typecheck     # TypeScript type checking
+
+# Server tests
+cd server && bunx --bun vitest run
 ```
 
 ## License
 
-Copyright (C) 2026 SQA & Automation SRL
-
-[AGPL-3.0](LICENSE)
+Apache-2.0 -- Copyright 2026 SQA & Automation SRL
