@@ -21,55 +21,65 @@ describe('createResolvers', () => {
   })
 
   describe('Mutation.createNode', () => {
-    it('creates a project node with default status draft', () => {
+    it('creates a project node with id starting with proj_', () => {
       const node = resolvers.Mutation.createNode(null, {
         type: 'project',
         title: 'Test Project',
       })
-
+      expect(node.id).toMatch(/^proj_/)
       expect(node).toMatchObject({
         type: 'project',
         title: 'Test Project',
         status: 'draft',
       })
-      expect(node.id).toBeDefined()
-      expect(node.createdAt).toBeDefined()
-      expect(node.updatedAt).toBeDefined()
     })
 
-    it('creates a node with description and metadata', () => {
+    it('creates a feature node with id starting with feat_', () => {
+      const node = resolvers.Mutation.createNode(null, {
+        type: 'feature',
+        title: 'Auth Flow',
+      })
+      expect(node.id).toMatch(/^feat_/)
+    })
+
+    it('creates a task node with id starting with task_', () => {
+      const node = resolvers.Mutation.createNode(null, {
+        type: 'task',
+        title: 'Write tests',
+      })
+      expect(node.id).toMatch(/^task_/)
+    })
+
+    it('creates a node with default status draft', () => {
+      const node = resolvers.Mutation.createNode(null, {
+        type: 'project',
+        title: 'Test',
+      })
+      expect(node.status).toBe('draft')
+    })
+
+    it('creates a node with description', () => {
       const node = resolvers.Mutation.createNode(null, {
         type: 'feature',
         title: 'Auth Flow',
         description: 'OAuth2 integration',
-        metadata: '{"priority":"high"}',
       })
-
       expect(node).toMatchObject({
         type: 'feature',
         title: 'Auth Flow',
         description: 'OAuth2 integration',
-        metadata: '{"priority":"high"}',
       })
     })
 
-    it('creates a part_of edge when parentId is provided', () => {
-      const project = resolvers.Mutation.createNode(null, {
+    it('returns camelCase timestamps', () => {
+      const node = resolvers.Mutation.createNode(null, {
         type: 'project',
-        title: 'Parent',
+        title: 'Test',
       })
-      const feature = resolvers.Mutation.createNode(null, {
-        type: 'feature',
-        title: 'Child',
-        parentId: project.id,
-      })
-
-      const edge = db.raw
-        .query(
-          'SELECT * FROM edges WHERE source_id = ? AND target_id = ? AND relation = ?',
-        )
-        .get(feature.id, project.id, 'part_of')
-      expect(edge).toBeDefined()
+      expect(node.createdAt).toBeDefined()
+      expect(node.updatedAt).toBeDefined()
+      expect(typeof node.createdAt).toBe('string')
+      expect(typeof node.updatedAt).toBe('string')
     })
   })
 
@@ -79,7 +89,6 @@ describe('createResolvers', () => {
         type: 'project',
         title: 'Find Me',
       })
-
       const found = resolvers.Query.node(null, { id: created.id })
       expect(found).toMatchObject({
         id: created.id,
@@ -95,88 +104,362 @@ describe('createResolvers', () => {
   })
 
   describe('Query.nodes', () => {
-    it('returns all nodes when no filters given', () => {
+    it('lists nodes by type', () => {
       resolvers.Mutation.createNode(null, { type: 'project', title: 'P1' })
       resolvers.Mutation.createNode(null, { type: 'project', title: 'P2' })
-
-      const nodes = resolvers.Query.nodes(null, {})
-      expect(nodes).toHaveLength(2)
-    })
-
-    it('filters by type', () => {
-      resolvers.Mutation.createNode(null, { type: 'project', title: 'P1' })
       resolvers.Mutation.createNode(null, { type: 'feature', title: 'F1' })
 
       const projects = resolvers.Query.nodes(null, { type: 'project' })
-      expect(projects).toHaveLength(1)
-      expect(projects[0].title).toBe('P1')
+      expect(projects).toHaveLength(2)
+      expect(
+        projects.every((n: { type: string }) => n.type === 'project'),
+      ).toBe(true)
     })
 
-    it('filters children by parentId', () => {
-      const project = resolvers.Mutation.createNode(null, {
-        type: 'project',
-        title: 'Parent',
-      })
-      resolvers.Mutation.createNode(null, {
-        type: 'feature',
-        title: 'Child',
-        parentId: project.id,
-      })
-      resolvers.Mutation.createNode(null, {
-        type: 'feature',
-        title: 'Orphan',
-      })
+    it('lists all nodes when no type filter', () => {
+      resolvers.Mutation.createNode(null, { type: 'project', title: 'P1' })
+      resolvers.Mutation.createNode(null, { type: 'feature', title: 'F1' })
 
-      const children = resolvers.Query.nodes(null, {
-        parentId: project.id,
-      })
-      expect(children).toHaveLength(1)
-      expect(children[0].title).toBe('Child')
+      const all = resolvers.Query.nodes(null, {})
+      expect(all).toHaveLength(2)
     })
   })
 
   describe('Mutation.updateNode', () => {
-    it('updates title and preserves other fields', () => {
-      const node = resolvers.Mutation.createNode(null, {
-        type: 'project',
-        title: 'Original',
-        description: 'Keep me',
-      })
-
-      const updated = resolvers.Mutation.updateNode(null, {
-        id: node.id,
-        title: 'Renamed',
-      })
-
-      expect(updated).toMatchObject({
-        id: node.id,
-        title: 'Renamed',
-        description: 'Keep me',
-        status: 'draft',
-      })
-    })
-
-    it('updates status', () => {
+    it('changes node status', () => {
       const node = resolvers.Mutation.createNode(null, {
         type: 'task',
-        title: 'Do thing',
+        title: 'Test',
       })
-
       const updated = resolvers.Mutation.updateNode(null, {
         id: node.id,
         status: 'in_progress',
       })
-
       expect(updated.status).toBe('in_progress')
     })
 
-    it('throws when node does not exist', () => {
+    it('throws for missing node id', () => {
       expect(() =>
         resolvers.Mutation.updateNode(null, {
           id: 'nonexistent',
-          title: 'Nope',
+          status: 'done',
         }),
       ).toThrow('Node nonexistent not found')
+    })
+  })
+
+  describe('Mutation.approveNode', () => {
+    it('transitions pending_review to approved', () => {
+      const node = resolvers.Mutation.createNode(null, {
+        type: 'feature',
+        title: 'Review Me',
+      })
+      resolvers.Mutation.updateNode(null, {
+        id: node.id,
+        status: 'pending_review',
+      })
+      const approved = resolvers.Mutation.approveNode(null, { id: node.id })
+      expect(approved.status).toBe('approved')
+    })
+
+    it('rejects approval of draft nodes', () => {
+      const node = resolvers.Mutation.createNode(null, {
+        type: 'feature',
+        title: 'Draft',
+      })
+      expect(() =>
+        resolvers.Mutation.approveNode(null, { id: node.id }),
+      ).toThrow('Cannot approve node with status "draft"')
+    })
+
+    it('throws for missing node', () => {
+      expect(() =>
+        resolvers.Mutation.approveNode(null, { id: 'nonexistent' }),
+      ).toThrow('Node nonexistent not found')
+    })
+  })
+
+  describe('Mutation.createEdge', () => {
+    it('links two nodes', () => {
+      const project = resolvers.Mutation.createNode(null, {
+        type: 'project',
+        title: 'Parent',
+      })
+      const feature = resolvers.Mutation.createNode(null, {
+        type: 'feature',
+        title: 'Child',
+      })
+      const edge = resolvers.Mutation.createEdge(null, {
+        sourceId: feature.id,
+        targetId: project.id,
+        relation: 'part_of',
+      })
+      expect(edge).toMatchObject({
+        sourceId: feature.id,
+        targetId: project.id,
+        relation: 'part_of',
+      })
+      expect(edge.createdAt).toBeDefined()
+    })
+  })
+
+  describe('Mutation.removeEdge', () => {
+    it('removes an existing edge and returns true', () => {
+      const project = resolvers.Mutation.createNode(null, {
+        type: 'project',
+        title: 'P',
+      })
+      const feature = resolvers.Mutation.createNode(null, {
+        type: 'feature',
+        title: 'F',
+      })
+      resolvers.Mutation.createEdge(null, {
+        sourceId: feature.id,
+        targetId: project.id,
+        relation: 'part_of',
+      })
+      const result = resolvers.Mutation.removeEdge(null, {
+        sourceId: feature.id,
+        targetId: project.id,
+        relation: 'part_of',
+      })
+      expect(result).toBe(true)
+    })
+
+    it('returns false for nonexistent edge', () => {
+      const result = resolvers.Mutation.removeEdge(null, {
+        sourceId: 'a',
+        targetId: 'b',
+        relation: 'part_of',
+      })
+      expect(result).toBe(false)
+    })
+  })
+
+  describe('Query.descendants', () => {
+    it('returns direct children with maxDepth 1', () => {
+      const project = resolvers.Mutation.createNode(null, {
+        type: 'project',
+        title: 'Root',
+      })
+      const feat1 = resolvers.Mutation.createNode(null, {
+        type: 'feature',
+        title: 'F1',
+      })
+      const feat2 = resolvers.Mutation.createNode(null, {
+        type: 'feature',
+        title: 'F2',
+      })
+      const task = resolvers.Mutation.createNode(null, {
+        type: 'task',
+        title: 'T1',
+      })
+      resolvers.Mutation.createEdge(null, {
+        sourceId: feat1.id,
+        targetId: project.id,
+        relation: 'part_of',
+      })
+      resolvers.Mutation.createEdge(null, {
+        sourceId: feat2.id,
+        targetId: project.id,
+        relation: 'part_of',
+      })
+      resolvers.Mutation.createEdge(null, {
+        sourceId: task.id,
+        targetId: feat1.id,
+        relation: 'part_of',
+      })
+
+      const children = resolvers.Query.descendants(null, {
+        nodeId: project.id,
+        relation: 'part_of',
+        maxDepth: 1,
+      })
+      expect(children).toHaveLength(2)
+      const ids = children.map((n: { id: string }) => n.id)
+      expect(ids).toContain(feat1.id)
+      expect(ids).toContain(feat2.id)
+      expect(ids).not.toContain(task.id)
+    })
+
+    it('returns multi-level descendants without maxDepth constraint', () => {
+      const project = resolvers.Mutation.createNode(null, {
+        type: 'project',
+        title: 'Root',
+      })
+      const feature = resolvers.Mutation.createNode(null, {
+        type: 'feature',
+        title: 'F1',
+      })
+      const task = resolvers.Mutation.createNode(null, {
+        type: 'task',
+        title: 'T1',
+      })
+      resolvers.Mutation.createEdge(null, {
+        sourceId: feature.id,
+        targetId: project.id,
+        relation: 'part_of',
+      })
+      resolvers.Mutation.createEdge(null, {
+        sourceId: task.id,
+        targetId: feature.id,
+        relation: 'part_of',
+      })
+
+      const all = resolvers.Query.descendants(null, {
+        nodeId: project.id,
+        relation: 'part_of',
+      })
+      expect(all).toHaveLength(2)
+      const ids = all.map((n: { id: string }) => n.id)
+      expect(ids).toContain(feature.id)
+      expect(ids).toContain(task.id)
+    })
+  })
+
+  describe('Query.subtree', () => {
+    it('returns full tree traversal across all edge types', () => {
+      const project = resolvers.Mutation.createNode(null, {
+        type: 'project',
+        title: 'Root',
+      })
+      const feature = resolvers.Mutation.createNode(null, {
+        type: 'feature',
+        title: 'F1',
+      })
+      const task = resolvers.Mutation.createNode(null, {
+        type: 'task',
+        title: 'T1',
+      })
+      resolvers.Mutation.createEdge(null, {
+        sourceId: feature.id,
+        targetId: project.id,
+        relation: 'part_of',
+      })
+      resolvers.Mutation.createEdge(null, {
+        sourceId: task.id,
+        targetId: feature.id,
+        relation: 'part_of',
+      })
+
+      const tree = resolvers.Query.subtree(null, { nodeId: project.id })
+      expect(tree).toHaveLength(2)
+    })
+
+    it('respects maxDepth', () => {
+      const project = resolvers.Mutation.createNode(null, {
+        type: 'project',
+        title: 'Root',
+      })
+      const feature = resolvers.Mutation.createNode(null, {
+        type: 'feature',
+        title: 'F1',
+      })
+      const task = resolvers.Mutation.createNode(null, {
+        type: 'task',
+        title: 'T1',
+      })
+      resolvers.Mutation.createEdge(null, {
+        sourceId: feature.id,
+        targetId: project.id,
+        relation: 'part_of',
+      })
+      resolvers.Mutation.createEdge(null, {
+        sourceId: task.id,
+        targetId: feature.id,
+        relation: 'part_of',
+      })
+
+      const shallow = resolvers.Query.subtree(null, {
+        nodeId: project.id,
+        maxDepth: 1,
+      })
+      expect(shallow).toHaveLength(1)
+      expect(shallow[0].id).toBe(feature.id)
+    })
+  })
+
+  describe('Query.search', () => {
+    it('finds nodes by title', () => {
+      resolvers.Mutation.createNode(null, {
+        type: 'project',
+        title: 'Authentication',
+      })
+      resolvers.Mutation.createNode(null, {
+        type: 'project',
+        title: 'Database',
+      })
+
+      const results = resolvers.Query.search(null, { query: 'Auth' })
+      expect(results).toHaveLength(1)
+      expect(results[0].title).toBe('Authentication')
+    })
+
+    it('finds nodes by description', () => {
+      resolvers.Mutation.createNode(null, {
+        type: 'feature',
+        title: 'Login',
+        description: 'OAuth2 integration',
+      })
+
+      const results = resolvers.Query.search(null, { query: 'OAuth' })
+      expect(results).toHaveLength(1)
+      expect(results[0].title).toBe('Login')
+    })
+
+    it('filters by type', () => {
+      resolvers.Mutation.createNode(null, {
+        type: 'project',
+        title: 'Auth Project',
+      })
+      resolvers.Mutation.createNode(null, {
+        type: 'feature',
+        title: 'Auth Feature',
+      })
+
+      const results = resolvers.Query.search(null, {
+        query: 'Auth',
+        type: 'project',
+      })
+      expect(results).toHaveLength(1)
+      expect(results[0].type).toBe('project')
+    })
+
+    it('filters by status', () => {
+      const node = resolvers.Mutation.createNode(null, {
+        type: 'project',
+        title: 'Auth',
+      })
+      resolvers.Mutation.updateNode(null, {
+        id: node.id,
+        status: 'in_progress',
+      })
+      resolvers.Mutation.createNode(null, {
+        type: 'project',
+        title: 'Auth2',
+      })
+
+      const results = resolvers.Query.search(null, {
+        query: 'Auth',
+        status: 'in_progress',
+      })
+      expect(results).toHaveLength(1)
+      expect(results[0].title).toBe('Auth')
+    })
+
+    it('respects limit', () => {
+      for (let i = 0; i < 5; i++) {
+        resolvers.Mutation.createNode(null, {
+          type: 'task',
+          title: `Task ${i}`,
+        })
+      }
+
+      const results = resolvers.Query.search(null, {
+        query: 'Task',
+        limit: 2,
+      })
+      expect(results).toHaveLength(2)
     })
   })
 })

@@ -1,85 +1,38 @@
 import { createSchema } from 'graphql-yoga'
 
 export const typeDefs = /* GraphQL */ `
-  enum NodeType {
-    project
-    feature
-    task
-  }
-
-  enum Status {
-    draft
-    pending_review
-    approved
-    in_progress
-    done
-    blocked
-    cancelled
-  }
-
-  enum Relation {
-    part_of
-    blocks
-  }
-
   type Node {
-    id: ID!
-    type: NodeType!
+    id: String!
+    type: String!
     title: String!
     description: String
-    status: Status!
+    status: String!
     metadata: String
     createdAt: String!
     updatedAt: String!
-    children: [Node!]!
-    blockedBy: [Node!]!
-    blocking: [Node!]!
   }
 
   type Edge {
-    sourceId: ID!
-    targetId: ID!
-    relation: Relation!
+    sourceId: String!
+    targetId: String!
+    relation: String!
     createdAt: String!
   }
 
   type Query {
-    node(id: ID!): Node
-    nodes(type: NodeType, status: Status, parentId: ID): [Node!]!
-    tree(rootId: ID!): Node
-    search(query: String!, type: NodeType): [Node!]!
+    node(id: String!): Node
+    nodes(type: String): [Node!]!
+    descendants(nodeId: String!, relation: String, maxDepth: Int): [Node!]!
+    subtree(nodeId: String!, maxDepth: Int): [Node!]!
+    search(query: String!, type: String, status: String, limit: Int): [Node!]!
   }
 
   type Mutation {
-    createNode(
-      type: NodeType!
-      title: String!
-      description: String
-      parentId: ID
-      metadata: String
-    ): Node!
-
-    updateNode(
-      id: ID!
-      title: String
-      description: String
-      status: Status
-      metadata: String
-    ): Node!
-
-    deleteNode(id: ID!): Boolean!
-
-    createEdge(
-      sourceId: ID!
-      targetId: ID!
-      relation: Relation!
-    ): Edge!
-
-    deleteEdge(
-      sourceId: ID!
-      targetId: ID!
-      relation: Relation!
-    ): Boolean!
+    createNode(type: String!, title: String!, description: String): Node!
+    updateNode(id: String!, status: String): Node!
+    approveNode(id: String!): Node!
+    createEdge(sourceId: String!, targetId: String!, relation: String!): Edge!
+    removeEdge(sourceId: String!, targetId: String!, relation: String!): Boolean!
   }
 `
 

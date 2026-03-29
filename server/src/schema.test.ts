@@ -8,70 +8,86 @@ describe('schema', () => {
   })
 
   it('defines Node type with required fields', () => {
-    const nodeType = schema.getType('Node')
+    const nodeType = schema.getType(
+      'Node',
+    ) as import('graphql').GraphQLObjectType
     expect(nodeType).toBeDefined()
+    const fields = nodeType.getFields()
+    expect(fields.id).toBeDefined()
+    expect(fields.type).toBeDefined()
+    expect(fields.title).toBeDefined()
+    expect(fields.description).toBeDefined()
+    expect(fields.status).toBeDefined()
+    expect(fields.metadata).toBeDefined()
+    expect(fields.createdAt).toBeDefined()
+    expect(fields.updatedAt).toBeDefined()
   })
 
-  it('defines NodeType enum with project, feature, task values', () => {
-    const nodeType = schema.getType('NodeType')
-    expect(nodeType).toBeDefined()
+  it('uses String types instead of enums (no NodeType, Status, Relation enums)', () => {
+    expect(schema.getType('NodeType')).toBeUndefined()
+    expect(schema.getType('Status')).toBeUndefined()
+    expect(schema.getType('Relation')).toBeUndefined()
   })
 
-  it('defines Status enum', () => {
-    const status = schema.getType('Status')
-    expect(status).toBeDefined()
-  })
-
-  it('defines Relation enum', () => {
-    const relation = schema.getType('Relation')
-    expect(relation).toBeDefined()
-  })
-
-  it('Node type has children, blockedBy, and blocking fields', () => {
+  it('Node type does not have children, blockedBy, or blocking fields', () => {
     const nodeType = schema.getType(
       'Node',
     ) as import('graphql').GraphQLObjectType
     const fields = nodeType.getFields()
-    expect(fields.children).toBeDefined()
-    expect(fields.blockedBy).toBeDefined()
-    expect(fields.blocking).toBeDefined()
+    expect(fields.children).toBeUndefined()
+    expect(fields.blockedBy).toBeUndefined()
+    expect(fields.blocking).toBeUndefined()
   })
 
-  it('Query type has tree and deleteNode mutation exists', () => {
-    const queryType = schema.getType(
-      'Query',
-    ) as import('graphql').GraphQLObjectType
-    const queryFields = queryType.getFields()
-    expect(queryFields.tree).toBeDefined()
-
-    const mutationType = schema.getType(
-      'Mutation',
-    ) as import('graphql').GraphQLObjectType
-    const mutationFields = mutationType.getFields()
-    expect(mutationFields.deleteNode).toBeDefined()
-  })
-
-  it('Edge type uses enum types', () => {
+  it('Edge type has sourceId, targetId, relation, createdAt as String fields', () => {
     const edgeType = schema.getType(
       'Edge',
     ) as import('graphql').GraphQLObjectType
     const fields = edgeType.getFields()
-    expect(fields.relation).toBeDefined()
     expect(fields.sourceId).toBeDefined()
     expect(fields.targetId).toBeDefined()
+    expect(fields.relation).toBeDefined()
+    expect(fields.createdAt).toBeDefined()
   })
 
-  it('uses enum types for NodeType, Status, and Relation', () => {
-    expect(schema.getType('NodeType')).toBeDefined()
-    expect(schema.getType('Status')).toBeDefined()
-    expect(schema.getType('Relation')).toBeDefined()
+  it('Query type has node, nodes, descendants, subtree, search', () => {
+    const queryType = schema.getType(
+      'Query',
+    ) as import('graphql').GraphQLObjectType
+    const fields = queryType.getFields()
+    expect(fields.node).toBeDefined()
+    expect(fields.nodes).toBeDefined()
+    expect(fields.descendants).toBeDefined()
+    expect(fields.subtree).toBeDefined()
+    expect(fields.search).toBeDefined()
   })
 
-  it('defines createNode mutation', () => {
+  it('Query type does not have tree', () => {
+    const queryType = schema.getType(
+      'Query',
+    ) as import('graphql').GraphQLObjectType
+    const fields = queryType.getFields()
+    expect(fields.tree).toBeUndefined()
+  })
+
+  it('Mutation type has createNode, updateNode, approveNode, createEdge, removeEdge', () => {
     const mutationType = schema.getType(
       'Mutation',
     ) as import('graphql').GraphQLObjectType
     const fields = mutationType.getFields()
     expect(fields.createNode).toBeDefined()
+    expect(fields.updateNode).toBeDefined()
+    expect(fields.approveNode).toBeDefined()
+    expect(fields.createEdge).toBeDefined()
+    expect(fields.removeEdge).toBeDefined()
+  })
+
+  it('Mutation type does not have deleteNode or deleteEdge', () => {
+    const mutationType = schema.getType(
+      'Mutation',
+    ) as import('graphql').GraphQLObjectType
+    const fields = mutationType.getFields()
+    expect(fields.deleteNode).toBeUndefined()
+    expect(fields.deleteEdge).toBeUndefined()
   })
 })

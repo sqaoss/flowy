@@ -4,25 +4,135 @@ import type { createDb } from './db.ts'
 type Db = ReturnType<typeof createDb>
 
 const NODE_COLS =
-  'id, type, title, description, status, metadata, created_at as createdAt, updated_at as updatedAt'
+  'id, type, title, description, status, metadata, created_at, updated_at'
+
+const PREFIX_MAP: Record<string, string> = {
+  project: 'proj',
+  feature: 'feat',
+  task: 'task',
+}
+
+function generateId(type: string): string {
+  const prefix = PREFIX_MAP[type] ?? type
+  return `${prefix}_${nanoid(12)}`
+}
+
+function rowToNode(row: Record<string, unknown>) {
+  return {
+    id: row.id,
+    type: row.type,
+    title: row.title,
+    description: row.description,
+    status: row.status,
+    metadata: row.metadata,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  }
+}
 
 function selectNode(db: Db, id: string) {
-  return db.raw.query(`SELECT ${NODE_COLS} FROM nodes WHERE id = ?`).get(id)
+  const row = db.raw
+    .query(`SELECT ${NODE_COLS} FROM nodes WHERE id = ?`)
+    .get(id) as Record<string, unknown> | null
+  return row ? rowToNode(row) : null
+}
+
+function selectNodes(rows: Record<string, unknown>[]) {
+  return rows.map(rowToNode)
+}
+
+function prefixedCols() {
+  return NODE_COLS.split(', ')
+    .map((c) => `n.${c}`)
+    .join(', ')
 }
 
 export function createResolvers(db: Db) {
   return {
     Query: {
       node: (_: unknown, args: { id: string }) => {
-        return selectNode(db, args.id) ?? null
+        return selectNode(db, args.id)
       },
 
-      nodes: (
-        _: unknown,
-        args: { type?: string; status?: string; parentId?: string },
-      ) => {
+      nodes: (_: unknown, args: { type?: string }) => {
         const conditions: string[] = []
         const params: unknown[] = []
+        if (args.type) {
+          conditions.push('type = ?')
+          params.push(args.type)
+        }
+        const where =
+          conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : ''
+        const rows = db.raw
+          .query(`SELECT ${NODE_COLS} FROM nodes ${where}`)
+          .all(...params) as Record<string, unknown>[]
+        return selectNodes(rows)
+      },
+
+      descendants: (
+        _: unknown,
+        args: { nodeId: string; relation?: string; maxDepth?: number },
+      ) => {
+        const maxDepth = args.maxDepth ?? 100
+        let rows: Record<string, unknown>[]
+        if (args.relation) {
+          rows = db.raw
+            .query(
+              `WITH RECURSIVE tree(id, depth) AS (
+                SELECT source_id, 1 FROM edges WHERE target_id = ?1 AND relation = ?3
+                UNION ALL
+                SELECT e.source_id, t.depth + 1 FROM edges e
+                JOIN tree t ON e.target_id = t.id WHERE t.depth < ?2 AND e.relation = ?3
+              )
+              SELECT DISTINCT ${prefixedCols()} FROM nodes n JOIN tree t ON n.id = t.id`,
+            )
+            .all(args.nodeId, maxDepth, args.relation) as Record<
+            string,
+            unknown
+          >[]
+        } else {
+          rows = db.raw
+            .query(
+              `WITH RECURSIVE tree(id, depth) AS (
+                SELECT source_id, 1 FROM edges WHERE target_id = ?1
+                UNION ALL
+                SELECT e.source_id, t.depth + 1 FROM edges e
+                JOIN tree t ON e.target_id = t.id WHERE t.depth < ?2
+              )
+              SELECT DISTINCT ${prefixedCols()} FROM nodes n JOIN tree t ON n.id = t.id`,
+            )
+            .all(args.nodeId, maxDepth) as Record<string, unknown>[]
+        }
+        return selectNodes(rows)
+      },
+
+      subtree: (_: unknown, args: { nodeId: string; maxDepth?: number }) => {
+        const maxDepth = args.maxDepth ?? 100
+        const rows = db.raw
+          .query(
+            `WITH RECURSIVE tree(id, depth) AS (
+              SELECT source_id, 1 FROM edges WHERE target_id = ?1
+              UNION ALL
+              SELECT e.source_id, t.depth + 1 FROM edges e
+              JOIN tree t ON e.target_id = t.id WHERE t.depth < ?2
+            )
+            SELECT DISTINCT ${prefixedCols()} FROM nodes n JOIN tree t ON n.id = t.id`,
+          )
+          .all(args.nodeId, maxDepth) as Record<string, unknown>[]
+        return selectNodes(rows)
+      },
+
+      search: (
+        _: unknown,
+        args: {
+          query: string
+          type?: string
+          status?: string
+          limit?: number
+        },
+      ) => {
+        const conditions = ['(title LIKE ? OR description LIKE ?)']
+        const params: unknown[] = [`%${args.query}%`, `%${args.query}%`]
         if (args.type) {
           conditions.push('type = ?')
           params.push(args.type)
@@ -31,50 +141,22 @@ export function createResolvers(db: Db) {
           conditions.push('status = ?')
           params.push(args.status)
         }
-        if (args.parentId) {
-          conditions.push(
-            'id IN (SELECT source_id FROM edges WHERE target_id = ? AND relation = ?)',
-          )
-          params.push(args.parentId, 'part_of')
-        }
-        const where =
-          conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : ''
-        return db.raw
-          .query(`SELECT ${NODE_COLS} FROM nodes ${where}`)
-          .all(...params)
-      },
-
-      tree: (_: unknown, args: { rootId: string }) => {
-        return selectNode(db, args.rootId) ?? null
-      },
-
-      search: (_: unknown, args: { query: string; type?: string }) => {
-        const conditions = ['(title LIKE ? OR description LIKE ?)']
-        const params: unknown[] = [`%${args.query}%`, `%${args.query}%`]
-        if (args.type) {
-          conditions.push('type = ?')
-          params.push(args.type)
-        }
-        return db.raw
+        const limit = args.limit ?? 50
+        const rows = db.raw
           .query(
-            `SELECT ${NODE_COLS} FROM nodes WHERE ${conditions.join(' AND ')}`,
+            `SELECT ${NODE_COLS} FROM nodes WHERE ${conditions.join(' AND ')} LIMIT ?`,
           )
-          .all(...params)
+          .all(...params, limit) as Record<string, unknown>[]
+        return selectNodes(rows)
       },
     },
 
     Mutation: {
       createNode: (
         _: unknown,
-        args: {
-          type: string
-          title: string
-          description?: string
-          parentId?: string
-          metadata?: string
-        },
+        args: { type: string; title: string; description?: string },
       ) => {
-        const id = nanoid()
+        const id = generateId(args.type)
         const now = new Date().toISOString()
         db.raw.run(
           'INSERT INTO nodes (id, type, title, description, status, metadata, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
@@ -84,56 +166,45 @@ export function createResolvers(db: Db) {
             args.title,
             args.description ?? null,
             'draft',
-            args.metadata ?? null,
+            null,
             now,
             now,
           ],
         )
-        if (args.parentId) {
-          db.raw.run(
-            'INSERT INTO edges (source_id, target_id, relation, created_at) VALUES (?, ?, ?, ?)',
-            [id, args.parentId, 'part_of', now],
-          )
-        }
         return selectNode(db, id)
       },
 
-      updateNode: (
-        _: unknown,
-        args: {
-          id: string
-          title?: string
-          description?: string
-          status?: string
-          metadata?: string
-        },
-      ) => {
+      updateNode: (_: unknown, args: { id: string; status?: string }) => {
         const existing = db.raw
           .query('SELECT * FROM nodes WHERE id = ?')
           .get(args.id) as Record<string, unknown> | null
         if (!existing) throw new Error(`Node ${args.id} not found`)
         const now = new Date().toISOString()
-        db.raw.run(
-          'UPDATE nodes SET title = ?, description = ?, status = ?, metadata = ?, updated_at = ? WHERE id = ?',
-          [
-            args.title ?? existing.title,
-            args.description ?? existing.description,
-            args.status ?? existing.status,
-            args.metadata ?? existing.metadata,
-            now,
-            args.id,
-          ],
-        )
+        db.raw.run('UPDATE nodes SET status = ?, updated_at = ? WHERE id = ?', [
+          args.status ?? existing.status,
+          now,
+          args.id,
+        ])
         return selectNode(db, args.id)
       },
 
-      deleteNode: (_: unknown, args: { id: string }) => {
-        db.raw.run('DELETE FROM edges WHERE source_id = ? OR target_id = ?', [
-          args.id,
+      approveNode: (_: unknown, args: { id: string }) => {
+        const existing = db.raw
+          .query('SELECT * FROM nodes WHERE id = ?')
+          .get(args.id) as Record<string, unknown> | null
+        if (!existing) throw new Error(`Node ${args.id} not found`)
+        if (existing.status !== 'pending_review') {
+          throw new Error(
+            `Cannot approve node with status "${existing.status}", must be "pending_review"`,
+          )
+        }
+        const now = new Date().toISOString()
+        db.raw.run('UPDATE nodes SET status = ?, updated_at = ? WHERE id = ?', [
+          'approved',
+          now,
           args.id,
         ])
-        const result = db.raw.run('DELETE FROM nodes WHERE id = ?', [args.id])
-        return result.changes > 0
+        return selectNode(db, args.id)
       },
 
       createEdge: (
@@ -153,7 +224,7 @@ export function createResolvers(db: Db) {
         }
       },
 
-      deleteEdge: (
+      removeEdge: (
         _: unknown,
         args: { sourceId: string; targetId: string; relation: string },
       ) => {
@@ -162,36 +233,6 @@ export function createResolvers(db: Db) {
           [args.sourceId, args.targetId, args.relation],
         )
         return result.changes > 0
-      },
-    },
-
-    Node: {
-      createdAt: (parent: Record<string, unknown>) =>
-        parent.createdAt ?? parent.created_at,
-      updatedAt: (parent: Record<string, unknown>) =>
-        parent.updatedAt ?? parent.updated_at,
-      children: (parent: { id: string }) => {
-        return db.raw
-          .query(
-            `SELECT ${NODE_COLS} FROM nodes n JOIN edges e ON n.id = e.source_id WHERE e.target_id = ? AND e.relation = ?`,
-          )
-          .all(parent.id, 'part_of')
-      },
-
-      blockedBy: (parent: { id: string }) => {
-        return db.raw
-          .query(
-            `SELECT ${NODE_COLS} FROM nodes n JOIN edges e ON n.id = e.source_id WHERE e.target_id = ? AND e.relation = ?`,
-          )
-          .all(parent.id, 'blocks')
-      },
-
-      blocking: (parent: { id: string }) => {
-        return db.raw
-          .query(
-            `SELECT ${NODE_COLS} FROM nodes n JOIN edges e ON n.id = e.target_id WHERE e.source_id = ? AND e.relation = ?`,
-          )
-          .all(parent.id, 'blocks')
       },
     },
   }
