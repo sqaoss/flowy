@@ -477,4 +477,316 @@ describe('createResolvers', () => {
       expect(results).toHaveLength(2)
     })
   })
+
+  describe('Mutation.createNode — input validation', () => {
+    it('throws on invalid type', () => {
+      expect(() =>
+        resolvers.Mutation.createNode(null, {
+          type: 'epic',
+          title: 'Bad Type',
+        }),
+      ).toThrow()
+    })
+  })
+
+  describe('Mutation.updateNode — input validation', () => {
+    it('throws on invalid status', () => {
+      const node = create(resolvers, { type: 'task', title: 'Test' })
+      expect(() =>
+        resolvers.Mutation.updateNode(null, {
+          id: node.id,
+          status: 'invalid_status',
+        }),
+      ).toThrow()
+    })
+
+    it('keeps current status when status is omitted', () => {
+      const node = create(resolvers, { type: 'task', title: 'Test' })
+      const updated = resolvers.Mutation.updateNode(null, { id: node.id })
+      expect(updated.status).toBe('draft')
+    })
+  })
+
+  describe('Mutation.approveNode — decision table completeness', () => {
+    it('rejects approval of in_progress nodes', () => {
+      const node = create(resolvers, { type: 'feature', title: 'Test' })
+      resolvers.Mutation.updateNode(null, {
+        id: node.id,
+        status: 'in_progress',
+      })
+      expect(() =>
+        resolvers.Mutation.approveNode(null, { id: node.id }),
+      ).toThrow('Cannot approve node with status "in_progress"')
+    })
+
+    it('rejects approval of done nodes', () => {
+      const node = create(resolvers, { type: 'feature', title: 'Test' })
+      resolvers.Mutation.updateNode(null, { id: node.id, status: 'done' })
+      expect(() =>
+        resolvers.Mutation.approveNode(null, { id: node.id }),
+      ).toThrow('Cannot approve node with status "done"')
+    })
+
+    it('rejects approval of already approved nodes', () => {
+      const node = create(resolvers, { type: 'feature', title: 'Test' })
+      resolvers.Mutation.updateNode(null, {
+        id: node.id,
+        status: 'pending_review',
+      })
+      resolvers.Mutation.approveNode(null, { id: node.id })
+      expect(() =>
+        resolvers.Mutation.approveNode(null, { id: node.id }),
+      ).toThrow('Cannot approve node with status "approved"')
+    })
+
+    it('rejects approval of blocked nodes', () => {
+      const node = create(resolvers, { type: 'feature', title: 'Test' })
+      resolvers.Mutation.updateNode(null, { id: node.id, status: 'blocked' })
+      expect(() =>
+        resolvers.Mutation.approveNode(null, { id: node.id }),
+      ).toThrow('Cannot approve node with status "blocked"')
+    })
+
+    it('rejects approval of cancelled nodes', () => {
+      const node = create(resolvers, { type: 'feature', title: 'Test' })
+      resolvers.Mutation.updateNode(null, {
+        id: node.id,
+        status: 'cancelled',
+      })
+      expect(() =>
+        resolvers.Mutation.approveNode(null, { id: node.id }),
+      ).toThrow('Cannot approve node with status "cancelled"')
+    })
+  })
+
+  describe('Query.search — edge cases', () => {
+    it('returns empty array when no matches', () => {
+      create(resolvers, { type: 'project', title: 'Authentication' })
+      const results = resolvers.Query.search(null, {
+        query: 'zzz_no_match',
+      })
+      expect(results).toEqual([])
+    })
+
+    it('returns all nodes when query is empty string', () => {
+      create(resolvers, { type: 'project', title: 'Alpha' })
+      create(resolvers, { type: 'feature', title: 'Beta' })
+      const results = resolvers.Query.search(null, { query: '' })
+      expect(results).toHaveLength(2)
+    })
+
+    it('treats LIKE wildcards in query as literal characters', () => {
+      create(resolvers, { type: 'project', title: '100% done' })
+      create(resolvers, { type: 'project', title: 'totally done' })
+      const results = resolvers.Query.search(null, { query: '100%' })
+      expect(results).toHaveLength(1)
+      expect(results[0].title).toBe('100% done')
+    })
+  })
+
+  describe('Mutation.updateNode — state transitions', () => {
+    it('transitions approved to in_progress', () => {
+      const node = create(resolvers, { type: 'task', title: 'Test' })
+      resolvers.Mutation.updateNode(null, {
+        id: node.id,
+        status: 'pending_review',
+      })
+      resolvers.Mutation.approveNode(null, { id: node.id })
+      const updated = resolvers.Mutation.updateNode(null, {
+        id: node.id,
+        status: 'in_progress',
+      })
+      expect(updated.status).toBe('in_progress')
+    })
+
+    it('transitions in_progress to done', () => {
+      const node = create(resolvers, { type: 'task', title: 'Test' })
+      resolvers.Mutation.updateNode(null, {
+        id: node.id,
+        status: 'in_progress',
+      })
+      const updated = resolvers.Mutation.updateNode(null, {
+        id: node.id,
+        status: 'done',
+      })
+      expect(updated.status).toBe('done')
+    })
+
+    it('allows skipping states: draft to done', () => {
+      const node = create(resolvers, { type: 'task', title: 'Test' })
+      const updated = resolvers.Mutation.updateNode(null, {
+        id: node.id,
+        status: 'done',
+      })
+      expect(updated.status).toBe('done')
+    })
+
+    it('allows backwards transition: done to draft', () => {
+      const node = create(resolvers, { type: 'task', title: 'Test' })
+      resolvers.Mutation.updateNode(null, { id: node.id, status: 'done' })
+      const updated = resolvers.Mutation.updateNode(null, {
+        id: node.id,
+        status: 'draft',
+      })
+      expect(updated.status).toBe('draft')
+    })
+
+    it('transitions to blocked', () => {
+      const node = create(resolvers, { type: 'task', title: 'Test' })
+      const updated = resolvers.Mutation.updateNode(null, {
+        id: node.id,
+        status: 'blocked',
+      })
+      expect(updated.status).toBe('blocked')
+    })
+
+    it('transitions to cancelled', () => {
+      const node = create(resolvers, { type: 'task', title: 'Test' })
+      const updated = resolvers.Mutation.updateNode(null, {
+        id: node.id,
+        status: 'cancelled',
+      })
+      expect(updated.status).toBe('cancelled')
+    })
+
+    it('allows same status transition (no-op)', () => {
+      const node = create(resolvers, { type: 'task', title: 'Test' })
+      const updated = resolvers.Mutation.updateNode(null, {
+        id: node.id,
+        status: 'draft',
+      })
+      expect(updated.status).toBe('draft')
+    })
+  })
+
+  describe('Query.descendants — edge cases', () => {
+    it('returns empty array for leaf node', () => {
+      const leaf = create(resolvers, { type: 'task', title: 'Leaf' })
+      const result = resolvers.Query.descendants(null, {
+        nodeId: leaf.id,
+        relation: 'part_of',
+      })
+      expect(result).toEqual([])
+    })
+
+    it('returns empty array for non-existent node', () => {
+      const result = resolvers.Query.descendants(null, {
+        nodeId: 'nonexistent_id',
+        relation: 'part_of',
+      })
+      expect(result).toEqual([])
+    })
+
+    it('returns direct children even with maxDepth 0 (CTE base case)', () => {
+      const project = create(resolvers, { type: 'project', title: 'Root' })
+      const feature = create(resolvers, { type: 'feature', title: 'Child' })
+      const task = create(resolvers, { type: 'task', title: 'Grandchild' })
+      resolvers.Mutation.createEdge(null, {
+        sourceId: feature.id,
+        targetId: project.id,
+        relation: 'part_of',
+      })
+      resolvers.Mutation.createEdge(null, {
+        sourceId: task.id,
+        targetId: feature.id,
+        relation: 'part_of',
+      })
+      const result = resolvers.Query.descendants(null, {
+        nodeId: project.id,
+        relation: 'part_of',
+        maxDepth: 0,
+      })
+      // maxDepth=0 still returns direct children due to CTE base case starting at depth=1
+      expect(result).toHaveLength(1)
+      expect(result[0].id).toBe(feature.id)
+    })
+
+    it('traverses blocks relation', () => {
+      const task1 = create(resolvers, { type: 'task', title: 'Blocker' })
+      const task2 = create(resolvers, { type: 'task', title: 'Blocked' })
+      resolvers.Mutation.createEdge(null, {
+        sourceId: task1.id,
+        targetId: task2.id,
+        relation: 'blocks',
+      })
+      const blockers = resolvers.Query.descendants(null, {
+        nodeId: task2.id,
+        relation: 'blocks',
+      })
+      expect(blockers).toHaveLength(1)
+      expect(blockers[0].id).toBe(task1.id)
+    })
+  })
+
+  describe('Mutation.createEdge — edge cases', () => {
+    it('throws on duplicate edge', () => {
+      const p = create(resolvers, { type: 'project', title: 'P' })
+      const f = create(resolvers, { type: 'feature', title: 'F' })
+      resolvers.Mutation.createEdge(null, {
+        sourceId: f.id,
+        targetId: p.id,
+        relation: 'part_of',
+      })
+      expect(() =>
+        resolvers.Mutation.createEdge(null, {
+          sourceId: f.id,
+          targetId: p.id,
+          relation: 'part_of',
+        }),
+      ).toThrow()
+    })
+
+    it('allows self-referencing edge', () => {
+      const node = create(resolvers, { type: 'task', title: 'Self' })
+      const edge = resolvers.Mutation.createEdge(null, {
+        sourceId: node.id,
+        targetId: node.id,
+        relation: 'blocks',
+      })
+      expect(edge.sourceId).toBe(node.id)
+      expect(edge.targetId).toBe(node.id)
+    })
+  })
+
+  describe('Query.subtree — edge cases', () => {
+    it('returns empty array for leaf node', () => {
+      const leaf = create(resolvers, { type: 'task', title: 'Leaf' })
+      const result = resolvers.Query.subtree(null, { nodeId: leaf.id })
+      expect(result).toEqual([])
+    })
+
+    it('returns direct children with maxDepth 0 (CTE base case)', () => {
+      const project = create(resolvers, { type: 'project', title: 'Root' })
+      const feature = create(resolvers, { type: 'feature', title: 'Child' })
+      const task = create(resolvers, { type: 'task', title: 'Grandchild' })
+      resolvers.Mutation.createEdge(null, {
+        sourceId: feature.id,
+        targetId: project.id,
+        relation: 'part_of',
+      })
+      resolvers.Mutation.createEdge(null, {
+        sourceId: task.id,
+        targetId: feature.id,
+        relation: 'part_of',
+      })
+      const result = resolvers.Query.subtree(null, {
+        nodeId: project.id,
+        maxDepth: 0,
+      })
+      // Same CTE behavior as descendants — base case starts at depth=1
+      expect(result).toHaveLength(1)
+      expect(result[0].id).toBe(feature.id)
+    })
+  })
+
+  describe('Query.search — boundary values', () => {
+    it('returns empty array when limit is 0', () => {
+      create(resolvers, { type: 'project', title: 'Test' })
+      const results = resolvers.Query.search(null, {
+        query: 'Test',
+        limit: 0,
+      })
+      expect(results).toEqual([])
+    })
+  })
 })
