@@ -1,3 +1,10 @@
+## [1.0.2](https://github.com/sqaoss/flowy/compare/v1.0.1...v1.0.2) (2026-03-29)
+
+
+### Bug Fixes
+
+* exclude server/node_modules from npm package ([e11ac4f](https://github.com/sqaoss/flowy/commit/e11ac4f64a8d4d0de6626b9bc2a157c94e81f697))
+
 ## [1.0.1](https://github.com/sqaoss/flowy/compare/v1.0.0...v1.0.1) (2026-03-29)
 
 
