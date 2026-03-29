@@ -1,14 +1,20 @@
+import { nanoid } from 'nanoid'
 import type { createDb } from './db.ts'
 
 type Db = ReturnType<typeof createDb>
+
+const NODE_COLS =
+  'id, type, title, description, status, metadata, created_at as createdAt, updated_at as updatedAt'
+
+function selectNode(db: Db, id: string) {
+  return db.raw.query(`SELECT ${NODE_COLS} FROM nodes WHERE id = ?`).get(id)
+}
 
 export function createResolvers(db: Db) {
   return {
     Query: {
       node: (_: unknown, args: { id: string }) => {
-        return (
-          db.raw.query('SELECT * FROM nodes WHERE id = ?').get(args.id) ?? null
-        )
+        return selectNode(db, args.id) ?? null
       },
 
       nodes: (
@@ -33,14 +39,13 @@ export function createResolvers(db: Db) {
         }
         const where =
           conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : ''
-        return db.raw.query(`SELECT * FROM nodes ${where}`).all(...params)
+        return db.raw
+          .query(`SELECT ${NODE_COLS} FROM nodes ${where}`)
+          .all(...params)
       },
 
       tree: (_: unknown, args: { rootId: string }) => {
-        return (
-          db.raw.query('SELECT * FROM nodes WHERE id = ?').get(args.rootId) ??
-          null
-        )
+        return selectNode(db, args.rootId) ?? null
       },
 
       search: (_: unknown, args: { query: string; type?: string }) => {
@@ -51,7 +56,9 @@ export function createResolvers(db: Db) {
           params.push(args.type)
         }
         return db.raw
-          .query(`SELECT * FROM nodes WHERE ${conditions.join(' AND ')}`)
+          .query(
+            `SELECT ${NODE_COLS} FROM nodes WHERE ${conditions.join(' AND ')}`,
+          )
           .all(...params)
       },
     },
@@ -67,7 +74,6 @@ export function createResolvers(db: Db) {
           metadata?: string
         },
       ) => {
-        const { nanoid } = require('nanoid') as { nanoid: () => string }
         const id = nanoid()
         const now = new Date().toISOString()
         db.raw.run(
@@ -89,7 +95,7 @@ export function createResolvers(db: Db) {
             [id, args.parentId, 'part_of', now],
           )
         }
-        return db.raw.query('SELECT * FROM nodes WHERE id = ?').get(id)
+        return selectNode(db, id)
       },
 
       updateNode: (
@@ -118,7 +124,7 @@ export function createResolvers(db: Db) {
             args.id,
           ],
         )
-        return db.raw.query('SELECT * FROM nodes WHERE id = ?').get(args.id)
+        return selectNode(db, args.id)
       },
 
       deleteNode: (_: unknown, args: { id: string }) => {
@@ -160,10 +166,14 @@ export function createResolvers(db: Db) {
     },
 
     Node: {
+      createdAt: (parent: Record<string, unknown>) =>
+        parent.createdAt ?? parent.created_at,
+      updatedAt: (parent: Record<string, unknown>) =>
+        parent.updatedAt ?? parent.updated_at,
       children: (parent: { id: string }) => {
         return db.raw
           .query(
-            'SELECT n.* FROM nodes n JOIN edges e ON n.id = e.source_id WHERE e.target_id = ? AND e.relation = ?',
+            `SELECT ${NODE_COLS} FROM nodes n JOIN edges e ON n.id = e.source_id WHERE e.target_id = ? AND e.relation = ?`,
           )
           .all(parent.id, 'part_of')
       },
@@ -171,7 +181,7 @@ export function createResolvers(db: Db) {
       blockedBy: (parent: { id: string }) => {
         return db.raw
           .query(
-            'SELECT n.* FROM nodes n JOIN edges e ON n.id = e.source_id WHERE e.target_id = ? AND e.relation = ?',
+            `SELECT ${NODE_COLS} FROM nodes n JOIN edges e ON n.id = e.source_id WHERE e.target_id = ? AND e.relation = ?`,
           )
           .all(parent.id, 'blocks')
       },
@@ -179,7 +189,7 @@ export function createResolvers(db: Db) {
       blocking: (parent: { id: string }) => {
         return db.raw
           .query(
-            'SELECT n.* FROM nodes n JOIN edges e ON n.id = e.target_id WHERE e.source_id = ? AND e.relation = ?',
+            `SELECT ${NODE_COLS} FROM nodes n JOIN edges e ON n.id = e.target_id WHERE e.source_id = ? AND e.relation = ?`,
           )
           .all(parent.id, 'blocks')
       },

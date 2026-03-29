@@ -60,4 +60,18 @@ describe('schema', () => {
     expect(fields.sourceId).toBeDefined()
     expect(fields.targetId).toBeDefined()
   })
+
+  it('uses enum types for NodeType, Status, and Relation', () => {
+    expect(schema.getType('NodeType')).toBeDefined()
+    expect(schema.getType('Status')).toBeDefined()
+    expect(schema.getType('Relation')).toBeDefined()
+  })
+
+  it('defines approveNode mutation', () => {
+    const mutationType = schema.getType(
+      'Mutation',
+    ) as import('graphql').GraphQLObjectType
+    const fields = mutationType.getFields()
+    expect(fields.approveNode).toBeDefined()
+  })
 })
