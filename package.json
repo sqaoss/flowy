@@ -1,7 +1,7 @@
 {
   "name": "@sqaoss/flowy",
   "version": "1.0.2",
-  "description": "CLI for Flowy — project management for AI coding agents",
+  "description": "Agentic persistent planning",
   "type": "module",
   "bin": {
     "flowy": "./src/index.ts"
@@ -42,7 +42,8 @@
     "ai-agents",
     "graphql",
     "bun",
-    "tanstack-intent"
+    "agentic",
+    "planning"
   ],
   "scripts": {
     "cli": "bun src/index.ts",
@@ -60,7 +61,6 @@
   },
   "devDependencies": {
     "@biomejs/biome": "2.4.4",
-    "@tanstack/intent": "^0.0.23",
     "@commitlint/cli": "^20.4.2",
     "@commitlint/config-conventional": "^20.4.2",
     "husky": "^9.1.7",

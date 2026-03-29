@@ -70,13 +70,39 @@ setupCommand
 
 setupCommand
   .command('remote')
-  .description('Set up Flowy with the remote SaaS server')
-  .action(async () => {
+  .description('Connect to the hosted Flowy service')
+  .option('--email <email>', 'Email address for registration')
+  .action(async (opts) => {
     try {
-      output({
-        message:
-          'Remote mode is not yet implemented. It will support registration and API key setup via this CLI.',
+      if (!opts.email) {
+        throw new Error('--email is required for registration')
+      }
+
+      const { graphql } = await import('../util/client.ts')
+
+      const config = loadConfig()
+      config.mode = 'remote'
+      config.apiUrl = 'https://flowy-ai.fly.dev/graphql'
+      saveConfig(config)
+
+      const data = await graphql(
+        `mutation Register($email: String!) {
+          register(email: $email) {
+            user { id email tier }
+            apiKey
+          }
+        }`,
+        { email: opts.email },
+      )
+
+      config.apiKey = data.register.apiKey
+      saveConfig(config)
+
+      spawnSync('npx', ['skills', 'add', 'sqaoss/flowy', '--yes'], {
+        stdio: 'inherit',
       })
+
+      output(data.register)
     } catch (error) {
       outputError(error)
     }

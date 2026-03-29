@@ -88,13 +88,47 @@ describe('setup command', () => {
     )
   })
 
-  test('setup remote prints not-yet-implemented message', async () => {
+  test('setup remote requires --email', async () => {
     const { setupCommand } = await import('./setup.ts')
     await setupCommand.parseAsync(['remote'], { from: 'user' })
 
+    expect(mockOutputError).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: expect.stringContaining('--email is required'),
+      }),
+    )
+  })
+
+  test('setup remote registers, saves API key, and outputs result', async () => {
+    const mockGraphql = vi.fn().mockResolvedValue({
+      register: {
+        user: { id: 'user_1', email: 'test@example.com', tier: 'free' },
+        apiKey: 'flowy_test_key_123',
+      },
+    })
+    vi.doMock('../util/client.ts', () => ({
+      graphql: mockGraphql,
+    }))
+    mockSpawnSync.mockReturnValue({
+      status: 0,
+      stdout: Buffer.from(''),
+    })
+
+    const { setupCommand } = await import('./setup.ts')
+    await setupCommand.parseAsync(['remote', '--email', 'test@example.com'], {
+      from: 'user',
+    })
+
+    expect(mockSaveConfig).toHaveBeenCalledWith(
+      expect.objectContaining({
+        mode: 'remote',
+        apiKey: 'flowy_test_key_123',
+      }),
+    )
     expect(mockOutput).toHaveBeenCalledWith(
       expect.objectContaining({
-        message: expect.stringContaining('not yet implemented'),
+        user: expect.objectContaining({ email: 'test@example.com' }),
+        apiKey: 'flowy_test_key_123',
       }),
     )
   })
