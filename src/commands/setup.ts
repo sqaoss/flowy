@@ -1,22 +1,50 @@
 import { spawnSync } from 'node:child_process'
-import { existsSync } from 'node:fs'
-import { dirname, resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { mkdirSync, writeFileSync } from 'node:fs'
+import { homedir } from 'node:os'
+import { resolve } from 'node:path'
 import { Command } from 'commander'
 import { loadConfig, saveConfig } from '../util/config.ts'
 import { output, outputError } from '../util/format.ts'
 
-function findComposeFile(): string {
-  let dir = dirname(fileURLToPath(import.meta.url))
-  while (dir !== dirname(dir)) {
-    const candidate = resolve(dir, 'docker-compose.yml')
-    if (existsSync(candidate)) return candidate
-    dir = dirname(dir)
-  }
-  throw new Error('docker-compose.yml not found in any parent directory.')
+const COMPOSE_CONTENT = `services:
+  server:
+    build:
+      context: .
+      dockerfile_inline: |
+        FROM oven/bun:1.3.11
+        WORKDIR /app
+        RUN bun init -y && bun add @sqaoss/flowy
+        WORKDIR /app/node_modules/@sqaoss/flowy/server
+        RUN bun install --production
+        EXPOSE 4000
+        VOLUME /data
+        CMD ["bun", "src/index.ts"]
+    ports:
+      - "4000:4000"
+    volumes:
+      - flowy-data:/data
+    environment:
+      - FLOWY_DB_PATH=/data/flowy.sqlite
+      - PORT=4000
+    healthcheck:
+      test: ["CMD", "bun", "-e", "fetch('http://localhost:4000/health').then(r => r.ok ? process.exit(0) : process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  flowy-data:
+`
+
+function ensureComposeFile(): string {
+  const dir = resolve(homedir(), '.config', 'flowy')
+  mkdirSync(dir, { recursive: true })
+  const composePath = resolve(dir, 'docker-compose.yml')
+  writeFileSync(composePath, COMPOSE_CONTENT)
+  return composePath
 }
 
-async function pollHealth(url: string, timeoutMs = 30_000): Promise<void> {
+async function pollHealth(url: string, timeoutMs = 60_000): Promise<void> {
   const start = Date.now()
   while (Date.now() - start < timeoutMs) {
     try {
@@ -31,7 +59,7 @@ async function pollHealth(url: string, timeoutMs = 30_000): Promise<void> {
 }
 
 export const setupCommand = new Command('setup').description(
-  'Configure the Flowy CLI — use "flowy setup local" or "flowy setup remote"',
+  'Configure the Flowy CLI \u2014 use "flowy setup local" or "flowy setup remote"',
 )
 
 setupCommand
@@ -46,7 +74,7 @@ setupCommand
         throw new Error('Docker is required but was not found.')
       }
 
-      const composePath = findComposeFile()
+      const composePath = ensureComposeFile()
       spawnSync(
         'docker',
         ['compose', '-f', composePath, 'up', '-d', '--build'],
