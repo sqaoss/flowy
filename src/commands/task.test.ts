@@ -46,4 +46,38 @@ describe('task command', () => {
       }),
     )
   })
+
+  test('show calls outputError when graphql throws network error', async () => {
+    const { graphql } = await import('../util/client.ts')
+    const { outputError } = await import('../util/format.ts')
+    const { taskCommand } = await import('./task.ts')
+
+    vi.mocked(graphql).mockRejectedValueOnce(new TypeError('fetch failed'))
+
+    const showCmd = taskCommand.commands.find((c) => c.name() === 'show')!
+    await showCmd.parseAsync(['task_abc123'], { from: 'user' })
+
+    expect(outputError).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: 'fetch failed',
+      }),
+    )
+  })
+
+  test('show calls outputError when graphql returns error response', async () => {
+    const { graphql } = await import('../util/client.ts')
+    const { outputError } = await import('../util/format.ts')
+    const { taskCommand } = await import('./task.ts')
+
+    vi.mocked(graphql).mockRejectedValueOnce(new Error('Node not found'))
+
+    const showCmd = taskCommand.commands.find((c) => c.name() === 'show')!
+    await showCmd.parseAsync(['task_nonexistent'], { from: 'user' })
+
+    expect(outputError).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: 'Node not found',
+      }),
+    )
+  })
 })
