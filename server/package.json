@@ -1,0 +1,25 @@
+{
+  "name": "@sqaoss/flowy-server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "bun --watch src/index.ts",
+    "start": "bun src/index.ts",
+    "test": "bunx --bun vitest run",
+    "test:watch": "bunx --bun vitest",
+    "check": "biome check --write .",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "graphql": "16.13.2",
+    "graphql-yoga": "5.18.1",
+    "nanoid": "5.1.7"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.4.4",
+    "@types/bun": "^1.3.11",
+    "typescript": "^5",
+    "vitest": "^4.1.2"
+  }
+}
