@@ -67,11 +67,11 @@ describe('schema', () => {
     expect(schema.getType('Relation')).toBeDefined()
   })
 
-  it('defines approveNode mutation', () => {
+  it('defines createNode mutation', () => {
     const mutationType = schema.getType(
       'Mutation',
     ) as import('graphql').GraphQLObjectType
     const fields = mutationType.getFields()
-    expect(fields.approveNode).toBeDefined()
+    expect(fields.createNode).toBeDefined()
   })
 })
