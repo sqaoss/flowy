@@ -1,3 +1,11 @@
+# [1.1.0](https://github.com/sqaoss/flowy/compare/v1.0.2...v1.1.0) (2026-03-29)
+
+
+### Features
+
+* polish and prepare for launch ([ea33e9c](https://github.com/sqaoss/flowy/commit/ea33e9c023b8639a3d13f7c8b148f389b3d389b6))
+* **setup:** implement setup remote --email with registration flow ([702ff1c](https://github.com/sqaoss/flowy/commit/702ff1c1ebfa8ba65ed9bf0a84cc7d2ca7c66831))
+
 ## [1.0.2](https://github.com/sqaoss/flowy/compare/v1.0.1...v1.0.2) (2026-03-29)
 
 
