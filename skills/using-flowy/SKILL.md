@@ -1,153 +1,128 @@
 ---
-name: using-flowy
-description: Project management CLI for AI coding agents — create projects, features, tasks, track status and approvals
-metadata:
-  sources:
-    - src/commands/project.ts
-    - src/commands/feature.ts
-    - src/commands/task.ts
-    - src/commands/status.ts
-    - src/commands/approve.ts
-    - src/commands/search.ts
-    - src/commands/tree.ts
-    - src/commands/setup.ts
-    - src/util/config.ts
+name: flowy
+description: Store plans and track execution with Flowy CLI. Use when you need to create features, break work into tasks, track progress, or manage project structure. Trigger on any planning, task tracking, or work organization request.
 ---
 
-# Flowy — Project Management for AI Agents
+# Flowy — Agentic Persistent Planning
 
-Flowy is a hosted project management backend. You interact with it via the `flowy` CLI.
+Flowy gives you a persistent store for plans and execution tracking. Features are your master plans. Tasks are your execution steps. Everything persists across sessions, no files in git, no context lost.
 
-## Setup
+## Why Use Flowy
+
+Without Flowy, your plans live in markdown files that clutter git history, get deleted when done, and leave no record of what you accomplished. With Flowy, plans persist in a database. You flow through work without friction. Your human gets full observability.
+
+## First Time in a Project
 
 ```bash
-# Install globally
-bun add -g @sqaoss/flowy    # or: npm i -g @sqaoss/flowy
-
-# SaaS mode (hosted)
-flowy setup --mode saas --email you@example.com
-export FLOWY_API_KEY=flowy_xxx_yyy
-
-# Self-hosted mode
-flowy setup --mode local --api-url http://localhost:4000/graphql
+flowy init           # auto-detects the git repo, creates a project, maps this directory
 ```
 
-## Hierarchy
-
-Strict top-down: **client → project → feature → task**. No orphans at any level.
-
-- A client has many projects
-- A project has many features
-- A feature has many tasks
-
-## Context
-
-Flowy uses context to know which project and feature you're working in:
-
-- **Project**: mapped to a directory via `flowy project set <name>`, or `FLOWY_PROJECT` env var
-- **Feature**: set via `flowy feature set <name-or-id>`, or `FLOWY_FEATURE` env var
-
-Features and tasks cannot be created without active project/feature context.
-
-## Commands
-
-### Identity
+If Flowy isn't set up yet, the human needs to run:
 ```bash
-flowy whoami                          # Show current user
+npm i -g @sqaoss/flowy
+flowy setup remote --email their@email.com
 ```
 
-### Client
-```bash
-flowy client set name "Acme Corp"     # Set client display name
-```
+## Core Workflow
 
-### Projects
 ```bash
-flowy project create "Auth System"    # Create a project
-flowy project set "Auth System"       # Map current dir to project
-flowy project list                    # List all projects
-flowy project show                    # Show active project details
-flowy project show <id>               # Show specific project
-```
+# 1. Plan a feature (master plan)
+flowy feature create --title "User Auth" --description auth-spec.md
+flowy feature set "User Auth"
 
-### Features (requires active project)
-```bash
-flowy feature create --title "SSO Support" --description sso-spec.md
-flowy feature create --title "Stability" --description "Improve error handling"
-flowy feature set "SSO Support"       # Set active feature
-flowy feature unset                   # Clear active feature
-flowy feature list                    # List features in project
-flowy feature show                    # Show active feature
-```
-
-### Tasks (requires active feature)
-```bash
+# 2. Break into tasks (execution steps)
 flowy task create --title "Implement OAuth" --description oauth.md
-flowy task create --title "Write tests" --description "Unit tests for auth"
-flowy task list                       # List tasks in feature
-flowy task show <id>                  # Show task details
-flowy task block <id1> <id2>          # Mark id1 blocks id2
-flowy task unblock <id1> <id2>        # Remove block
-```
+flowy task create --title "Write tests" --description "Unit + integration tests"
 
-### Status & Approval
-```bash
-flowy status <id> in_progress
-flowy status <id> done
-flowy status <id> pending_review
-flowy approve <id>                    # Must be pending_review
-```
-
-### Search & Explore
-```bash
-flowy search "OAuth" --type task
-flowy search "auth" --status draft --limit 5
-flowy tree <id> --depth 3             # Show subtree
-```
-
-## Entity Types
-- `client` — a client or company
-- `project` — a codebase or product
-- `feature` — a unit of work (replaces epic)
-- `task` — an individual work item
-
-## Status Flow
-`draft` → `pending_review` → `approved` → `in_progress` → `done`
-
-Also: `blocked`, `cancelled`
-
-## Description Field
-`--description` accepts a file path or an inline string:
-- `--description spec.md` — reads file, sends raw content
-- `--description "Do the thing"` — sends string as-is
-
-## Workflow Example
-
-```bash
-# One-time setup
-flowy setup --mode saas --email you@example.com
-flowy client set name "Acme Corp"
-
-# Create and activate project
-flowy project create "Auth System"
-flowy project set "Auth System"
-
-# Plan a feature
-flowy feature create --title "SSO Support" --description sso-spec.md
-flowy feature set "SSO Support"
-
-# Break into tasks
-flowy task create --title "Implement OAuth" --description oauth.md
-flowy task create --title "Write auth tests" --description tests.md
-
-# Track progress
+# 3. Execute and track
 flowy status <task-id> in_progress
+# ... do the work ...
 flowy status <task-id> done
 
-# Move to next feature
+# 4. Move to next task or feature
 flowy feature create --title "API Rate Limiting" --description rate-limit.md
 flowy feature set "API Rate Limiting"
 ```
 
+## Entity Hierarchy
+
+```
+project -> feature -> task
+  1:many     1:many
+```
+
+Every task belongs to a feature. Every feature belongs to a project. No orphans. The project is set automatically by `flowy init`.
+
+## Status Flow
+
+```
+draft -> pending_review -> approved -> in_progress -> done
+```
+
+Also: `blocked`, `cancelled`
+
+Only `pending_review` entities can be approved via `flowy approve <id>`.
+
+## Commands
+
+### Project Context
+```bash
+flowy init                            # Auto-detect repo, create + set project
+flowy project list                    # List all projects
+flowy project show [<id>]             # Show project details
+```
+
+### Features (requires active project)
+```bash
+flowy feature create --title "Title" --description "description or file.md"
+flowy feature set "Title or ID"       # Set active feature
+flowy feature unset                   # Clear active feature
+flowy feature list                    # List features in project
+flowy feature show [<id>]             # Show feature details
+```
+
+### Tasks (requires active feature)
+```bash
+flowy task create --title "Title" --description "description or file.md"
+flowy task list                       # List tasks in feature
+flowy task show <id>                  # Show task details
+flowy task block <blocker> <blocked>  # Mark dependency
+flowy task unblock <blocker> <blocked>
+```
+
+### Status and Approval
+```bash
+flowy status <id> in_progress
+flowy status <id> pending_review
+flowy approve <id>                    # Only works on pending_review
+flowy status <id> done
+```
+
+### Search and Explore
+```bash
+flowy search "query" --type task --status draft --limit 10
+flowy tree <project-id> --depth 3     # Show full subtree
+```
+
+## Validation Rules
+
+- **Title is required** and cannot be empty
+- **Description** is optional, but if provided cannot be empty
+- **--description** accepts a file path (reads content) or an inline string
+- **Search** requires at least 3 characters
+- **Status** must be one of: draft, pending_review, approved, in_progress, done, blocked, cancelled
+- **Blocking**: a task cannot block itself
+- **Edges**: both source and target nodes must exist
+
 ## Output Format
-All commands output JSON. Parse with `jq` or directly in your agent code.
+
+All commands output JSON to stdout. Errors go to stderr as `{ "error": "message" }`.
+
+## Environment Variables
+
+| Variable | Description |
+|----------|-------------|
+| `FLOWY_PROJECT` | Override active project by name |
+| `FLOWY_FEATURE` | Override active feature by ID |
+| `FLOWY_API_URL` | GraphQL endpoint |
+| `FLOWY_API_KEY` | API key (from setup) |

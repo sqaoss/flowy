@@ -3,6 +3,7 @@ import { Command } from 'commander'
 import { approveCommand } from './commands/approve.ts'
 import { clientCommand } from './commands/client.ts'
 import { featureCommand } from './commands/feature.ts'
+import { initCommand } from './commands/init.ts'
 import { projectCommand } from './commands/project.ts'
 import { searchCommand } from './commands/search.ts'
 import { setupCommand } from './commands/setup.ts'
@@ -16,6 +17,7 @@ const program = new Command()
   .description('Project management for AI coding agents')
   .version('0.2.0')
 
+program.addCommand(initCommand)
 program.addCommand(setupCommand)
 program.addCommand(clientCommand)
 program.addCommand(projectCommand)
