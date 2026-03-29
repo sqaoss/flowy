@@ -90,6 +90,10 @@ setupCommand
       config.mode = 'local'
       config.apiUrl = apiUrl
       saveConfig(config)
+      spawnSync('npx', ['skills', 'add', 'sqaoss/flowy', '--yes'], {
+        stdio: 'inherit',
+      })
+
       output({ mode: 'local', apiUrl })
     } catch (error) {
       outputError(error)
