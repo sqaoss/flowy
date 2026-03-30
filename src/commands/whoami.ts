@@ -9,7 +9,7 @@ export const whoamiCommand = new Command('whoami')
       const data = await graphql<{ whoami: unknown }>(
         `query Whoami {
           whoami {
-            id email tier createdAt
+            id email tier createdAt graceEndsAt
           }
         }`,
       )

@@ -2,7 +2,7 @@ import { spawnSync } from 'node:child_process'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { resolve } from 'node:path'
-import { Command } from 'commander'
+import { Command, Option } from 'commander'
 import { loadConfig, saveConfig } from '../util/config.ts'
 import { output, outputError } from '../util/format.ts'
 
@@ -104,10 +104,20 @@ setupCommand
   .command('remote')
   .description('Connect to the hosted Flowy service')
   .option('--email <email>', 'Email address for registration')
+  .addOption(
+    new Option('--tier <tier>', 'Subscription tier').choices([
+      'explorer',
+      'pro',
+      'team',
+    ]),
+  )
   .action(async (opts) => {
     try {
       if (!opts.email) {
         throw new Error('--email is required for registration')
+      }
+      if (!opts.tier) {
+        throw new Error('--tier is required for registration')
       }
 
       const { graphql } = await import('../util/client.ts')
@@ -119,17 +129,25 @@ setupCommand
 
       const data = await graphql<{
         register: {
-          user: { id: string; email: string; tier: string }
+          user: {
+            id: string
+            email: string
+            tier: string
+            createdAt: string
+            graceEndsAt: string
+          }
           apiKey: string
+          checkoutUrl: string
         }
       }>(
-        `mutation Register($email: String!) {
-          register(email: $email) {
-            user { id email tier }
+        `mutation Register($email: String!, $tier: String!) {
+          register(email: $email, tier: $tier) {
+            user { id email tier createdAt graceEndsAt }
             apiKey
+            checkoutUrl
           }
         }`,
-        { email: opts.email },
+        { email: opts.email, tier: opts.tier },
       )
 
       config.apiKey = data.register.apiKey

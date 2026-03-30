@@ -99,11 +99,59 @@ describe('setup command', () => {
     )
   })
 
-  test('setup remote registers, saves API key, and outputs result', async () => {
+  test('setup remote requires --tier', async () => {
+    const { setupCommand } = await import('./setup.ts')
+    await setupCommand.parseAsync(['remote', '--email', 'test@example.com'], {
+      from: 'user',
+    })
+
+    expect(mockOutputError).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: expect.stringContaining('--tier is required'),
+      }),
+    )
+  })
+
+  test('setup remote outputs error when registration fails', async () => {
+    const mockGraphql = vi
+      .fn()
+      .mockRejectedValue(new Error('Registration is temporarily closed.'))
+    vi.doMock('../util/client.ts', () => ({
+      graphql: mockGraphql,
+    }))
+
+    const { setupCommand } = await import('./setup.ts')
+    await setupCommand.parseAsync(
+      ['remote', '--email', 'test@example.com', '--tier', 'explorer'],
+      { from: 'user' },
+    )
+
+    expect(mockOutputError).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: 'Registration is temporarily closed.',
+      }),
+    )
+    expect(mockSaveConfig).toHaveBeenCalledTimes(1)
+    expect(mockSaveConfig).toHaveBeenCalledWith(
+      expect.objectContaining({
+        mode: 'remote',
+        apiUrl: 'https://flowy-ai.fly.dev/graphql',
+      }),
+    )
+  })
+
+  test('setup remote sends correct email and tier in mutation', async () => {
     const mockGraphql = vi.fn().mockResolvedValue({
       register: {
-        user: { id: 'user_1', email: 'test@example.com', tier: 'free' },
-        apiKey: 'flowy_test_key_123',
+        user: {
+          id: 'user_1',
+          email: 'a@b.com',
+          tier: 'pro',
+          createdAt: '2026-01-01T00:00:00Z',
+          graceEndsAt: null,
+        },
+        apiKey: 'flowy_key',
+        checkoutUrl: null,
       },
     })
     vi.doMock('../util/client.ts', () => ({
@@ -115,10 +163,48 @@ describe('setup command', () => {
     })
 
     const { setupCommand } = await import('./setup.ts')
-    await setupCommand.parseAsync(['remote', '--email', 'test@example.com'], {
-      from: 'user',
+    await setupCommand.parseAsync(
+      ['remote', '--email', 'a@b.com', '--tier', 'pro'],
+      { from: 'user' },
+    )
+
+    expect(mockGraphql).toHaveBeenCalledOnce()
+    const [, variables] = mockGraphql.mock.calls[0]!
+    expect(variables).toEqual({ email: 'a@b.com', tier: 'pro' })
+  })
+
+  test('setup remote registers, saves API key, and outputs result', async () => {
+    const mockGraphql = vi.fn().mockResolvedValue({
+      register: {
+        user: {
+          id: 'user_1',
+          email: 'test@example.com',
+          tier: 'explorer',
+          createdAt: '2026-03-30T00:00:00Z',
+          graceEndsAt: '2026-04-13T00:00:00Z',
+        },
+        apiKey: 'flowy_test_key_123',
+        checkoutUrl: 'https://checkout.stripe.com/session_123',
+      },
+    })
+    vi.doMock('../util/client.ts', () => ({
+      graphql: mockGraphql,
+    }))
+    mockSpawnSync.mockReturnValue({
+      status: 0,
+      stdout: Buffer.from(''),
     })
 
+    const { setupCommand } = await import('./setup.ts')
+    await setupCommand.parseAsync(
+      ['remote', '--email', 'test@example.com', '--tier', 'explorer'],
+      { from: 'user' },
+    )
+
+    expect(mockGraphql).toHaveBeenCalledWith(
+      expect.stringContaining('register(email: $email, tier: $tier)'),
+      { email: 'test@example.com', tier: 'explorer' },
+    )
     expect(mockSaveConfig).toHaveBeenCalledWith(
       expect.objectContaining({
         mode: 'remote',
@@ -127,8 +213,13 @@ describe('setup command', () => {
     )
     expect(mockOutput).toHaveBeenCalledWith(
       expect.objectContaining({
-        user: expect.objectContaining({ email: 'test@example.com' }),
+        user: expect.objectContaining({
+          email: 'test@example.com',
+          tier: 'explorer',
+          graceEndsAt: '2026-04-13T00:00:00Z',
+        }),
         apiKey: 'flowy_test_key_123',
+        checkoutUrl: 'https://checkout.stripe.com/session_123',
       }),
     )
   })
