@@ -1,3 +1,10 @@
+# [1.2.0](https://github.com/sqaoss/flowy/compare/v1.1.3...v1.2.0) (2026-03-30)
+
+
+### Features
+
+* sync CLI with SaaS billing, tier system, and key rotation ([340bd9f](https://github.com/sqaoss/flowy/commit/340bd9ff19622075884a1fedddb2617d6ae4d413))
+
 ## [1.1.3](https://github.com/sqaoss/flowy/compare/v1.1.2...v1.1.3) (2026-03-29)
 
 
