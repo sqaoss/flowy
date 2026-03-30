@@ -20,8 +20,10 @@ flowy init           # auto-detects the git repo, creates a project, maps this d
 If Flowy isn't set up yet, the human needs to run:
 ```bash
 npm i -g @sqaoss/flowy
-flowy setup remote --email their@email.com
+flowy setup remote --email their@email.com --tier explorer
 ```
+
+After registration, complete payment at the checkout URL provided.
 
 ## Core Workflow
 
@@ -52,6 +54,18 @@ project -> feature -> task
 ```
 
 Every task belongs to a feature. Every feature belongs to a project. No orphans. The project is set automatically by `flowy init`.
+
+## Subscription Tiers
+
+Flowy requires an active subscription for all data operations.
+
+| Tier | Projects | Description |
+|------|----------|-------------|
+| `explorer` | Up to 10 | For individual developers |
+| `pro` | Unlimited | For power users |
+| `team` | Unlimited | For teams |
+
+After registration, complete payment at the checkout URL. Existing users can get a new checkout URL with `flowy billing checkout --tier <tier>`.
 
 ## Status Flow
 
@@ -102,6 +116,23 @@ flowy status <id> done
 ```bash
 flowy search "query" --type task --status draft --limit 10
 flowy tree <project-id> --depth 3     # Show full subtree
+```
+
+### Setup
+```bash
+flowy setup remote --email <email> --tier <tier>  # Register (tier: explorer, pro, team)
+flowy setup local                                  # Self-hosted Docker server
+flowy whoami                                       # Show user info (includes grace period)
+```
+
+### Billing
+```bash
+flowy billing checkout --tier <tier>              # Get checkout URL for subscription
+```
+
+### API Key Management
+```bash
+flowy key rotate                                  # Revoke all keys and generate a new one
 ```
 
 ## Validation Rules

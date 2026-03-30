@@ -22,11 +22,32 @@ export async function graphql<T = unknown>(
 
   const json = (await res.json()) as {
     data?: T
-    errors?: Array<{ message: string }>
+    errors?: Array<{ message: string; extensions?: { code?: string } }>
   }
 
   if (json.errors?.length) {
-    throw new Error(json.errors[0]?.message)
+    const error = json.errors[0]
+    const code = error?.extensions?.code
+
+    if (code === 'SUBSCRIPTION_REQUIRED') {
+      throw new Error(
+        'An active subscription is required. Run `flowy billing checkout` to subscribe.',
+      )
+    }
+
+    if (code === 'SUBSCRIPTION_EXPIRED') {
+      throw new Error(
+        'Your subscription has expired. Run `flowy billing checkout` to renew.',
+      )
+    }
+
+    if (code === 'SUBSCRIPTION_SUSPENDED') {
+      throw new Error(
+        'Your subscription is suspended. Please contact support to resolve this.',
+      )
+    }
+
+    throw new Error(error?.message)
   }
 
   return json.data as T
