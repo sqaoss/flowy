@@ -1,0 +1,10 @@
+{
+  "enabledPlugins": {
+    "typescript-lsp@claude-plugins-official": true,
+    "feature-dev@claude-plugins-official": true,
+    "code-simplifier@claude-plugins-official": true,
+    "test-writer-fixer@cc-marketplace": true,
+    "debugger@cc-marketplace": true,
+    "tdd-guard@tdd-guard": true
+  }
+}
