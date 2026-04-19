@@ -53,7 +53,7 @@ projectCommand
       )
       const project = data.nodes.find((n) => n.title === name)
       if (!project) {
-        throw new Error(`Project "${name}" not found`)
+        throw new Error(`Project "${name}" not found.`)
       }
       await setProject(project.id, project.title)
     } catch (error) {
