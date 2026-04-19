@@ -1,3 +1,10 @@
+## [1.2.1](https://github.com/sqaoss/flowy/compare/v1.2.0...v1.2.1) (2026-04-19)
+
+
+### Bug Fixes
+
+* add trailing period to project not-found error ([#20](https://github.com/sqaoss/flowy/issues/20)) ([264e684](https://github.com/sqaoss/flowy/commit/264e684ce26223456f99a45009359d88e88009d6))
+
 # [1.2.0](https://github.com/sqaoss/flowy/compare/v1.1.3...v1.2.0) (2026-03-30)
 
 
