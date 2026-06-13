@@ -56,6 +56,50 @@ describe('feature command', () => {
     )
   })
 
+  test('create issues ONE createNode-with-parent call under the active project', async () => {
+    const { graphql } = await import('../util/client.ts')
+    const { requireProject } = await import('../util/config.ts')
+    const { output } = await import('../util/format.ts')
+    const { featureCommand } = await import('./feature.ts')
+
+    vi.mocked(requireProject).mockReturnValueOnce({
+      id: 'proj_active',
+      name: 'active',
+    })
+    vi.mocked(graphql).mockResolvedValueOnce({
+      createNode: { id: 'feat_new', title: 'Test' },
+    })
+
+    const createCmd = featureCommand.commands.find((c) => c.name() === 'create')
+    await createCmd?.parseAsync(['--title', 'Test', '--description', 'Desc'], {
+      from: 'user',
+    })
+
+    expect(graphql).toHaveBeenCalledTimes(1)
+    const [query, variables] = vi.mocked(graphql).mock.calls[0]!
+    expect(query).toContain('createNode')
+    expect(query).toContain('parentId')
+    expect(variables).toMatchObject({
+      type: 'feature',
+      title: 'Test',
+      description: 'Desc',
+      parentId: 'proj_active',
+    })
+    expect(output).toHaveBeenCalledWith({ id: 'feat_new', title: 'Test' })
+  })
+
+  test('create validates the project BEFORE any write (no createNode on bad project)', async () => {
+    const { graphql } = await import('../util/client.ts')
+    const { featureCommand } = await import('./feature.ts')
+
+    const createCmd = featureCommand.commands.find((c) => c.name() === 'create')
+    await createCmd?.parseAsync(['--title', 'Test', '--description', 'Desc'], {
+      from: 'user',
+    })
+
+    expect(graphql).not.toHaveBeenCalled()
+  })
+
   test('unset calls updateProjectConfig to delete activeFeature', async () => {
     const { featureCommand } = await import('./feature.ts')
     const { output } = await import('../util/format.ts')

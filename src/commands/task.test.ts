@@ -63,6 +63,50 @@ describe('task command', () => {
     )
   })
 
+  test('create validates the feature BEFORE any write (no createNode on bad feature)', async () => {
+    const { graphql } = await import('../util/client.ts')
+    const { taskCommand } = await import('./task.ts')
+
+    // requireFeature() throws (default mock) — the command must bail out before
+    // issuing any mutation, so the node is never created.
+    const createCmd = taskCommand.commands.find((c) => c.name() === 'create')!
+    await createCmd.parseAsync(['--title', 'Test', '--description', 'desc'], {
+      from: 'user',
+    })
+
+    expect(graphql).not.toHaveBeenCalled()
+  })
+
+  test('create issues ONE createNode-with-parent call (not a create then a link)', async () => {
+    const { graphql } = await import('../util/client.ts')
+    const { requireFeature } = await import('../util/config.ts')
+    const { output } = await import('../util/format.ts')
+    const { taskCommand } = await import('./task.ts')
+
+    vi.mocked(requireFeature).mockReturnValueOnce('feat_active')
+    vi.mocked(graphql).mockResolvedValueOnce({
+      createNode: { id: 'task_new', title: 'Test' },
+    })
+
+    const createCmd = taskCommand.commands.find((c) => c.name() === 'create')!
+    await createCmd.parseAsync(['--title', 'Test', '--description', 'desc'], {
+      from: 'user',
+    })
+
+    // exactly one GraphQL call, and it is the parented createNode
+    expect(graphql).toHaveBeenCalledTimes(1)
+    const [query, variables] = vi.mocked(graphql).mock.calls[0]!
+    expect(query).toContain('createNode')
+    expect(query).toContain('parentId')
+    expect(variables).toMatchObject({
+      type: 'task',
+      title: 'Test',
+      description: 'desc',
+      parentId: 'feat_active',
+    })
+    expect(output).toHaveBeenCalledWith({ id: 'task_new', title: 'Test' })
+  })
+
   test('show calls outputError when graphql throws network error', async () => {
     const { graphql } = await import('../util/client.ts')
     const { outputError } = await import('../util/format.ts')

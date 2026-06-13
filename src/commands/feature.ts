@@ -8,7 +8,6 @@ import {
 import { resolveDescription } from '../util/description.ts'
 import { output, outputError } from '../util/format.ts'
 import {
-  CREATE_EDGE,
   CREATE_NODE,
   DELETE_NODE,
   DESCENDANTS,
@@ -35,21 +34,24 @@ featureCommand
   )
   .action(async (opts) => {
     try {
+      // Validate the active project BEFORE any write so a bad project context
+      // errors cleanly instead of orphaning a node (F24).
       const project = requireProject()
       const description = await resolveDescription({
         description: opts.description,
         descriptionFile: opts.descriptionFile,
       })
+      // One atomic call: the server creates the feature and its `part_of` edge
+      // to the project together, so a failed link can never leave an orphan.
       const nodeData = await graphql<{ createNode: { id: string } }>(
         CREATE_NODE,
-        { type: 'feature', title: opts.title, description },
+        {
+          type: 'feature',
+          title: opts.title,
+          description,
+          parentId: project.id,
+        },
       )
-      const featureId = nodeData.createNode.id
-      await graphql(CREATE_EDGE, {
-        sourceId: featureId,
-        targetId: project.id,
-        relation: 'part_of',
-      })
       output(nodeData.createNode)
     } catch (error) {
       outputError(error)

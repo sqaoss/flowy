@@ -175,6 +175,48 @@ describe('CLI/local-server contract (P1-1)', () => {
       relation: 'part_of',
     })
 
+    // CREATE_NODE_WITH_PARENT (P1-4/F24): create a node AND its part_of edge to
+    // the feature in one atomic call. The returned node must be a real child of
+    // the feature (reachable via the part_of hierarchy), proving the edge was
+    // created in the same unit of work — no separate createEdge call needed.
+    const { createNode: parentedTask } = await ok<{
+      createNode: { id: string }
+    }>(LOCAL_CONTRACT_OPERATIONS.CREATE_NODE_WITH_PARENT, {
+      type: 'task',
+      title: 'Parented Task',
+      description: 'linked atomically',
+      parentId: feature.id,
+    })
+    expect(parentedTask.id).toMatch(/^task_/)
+    const parentedChildren = await ok<{ descendants: Array<{ id: string }> }>(
+      LOCAL_CONTRACT_OPERATIONS.LIST_TASKS,
+      { nodeId: feature.id, relation: 'part_of', maxDepth: 1 },
+    )
+    expect(parentedChildren.descendants.map((n) => n.id)).toContain(
+      parentedTask.id,
+    )
+
+    // A non-existent parent must be rejected (NOT_FOUND) and leave no orphan.
+    const beforeOrphan = await ok<{ nodes: Array<{ id: string }> }>(
+      LOCAL_CONTRACT_OPERATIONS.ALL_TASKS,
+      { type: 'task' },
+    )
+    const badParent = await run(
+      LOCAL_CONTRACT_OPERATIONS.CREATE_NODE_WITH_PARENT,
+      {
+        type: 'task',
+        title: 'Should Not Exist',
+        description: 'orphan attempt',
+        parentId: 'feat_missing',
+      },
+    )
+    expect(badParent.errors).toBeDefined()
+    const afterOrphan = await ok<{ nodes: Array<{ id: string }> }>(
+      LOCAL_CONTRACT_OPERATIONS.ALL_TASKS,
+      { type: 'task' },
+    )
+    expect(afterOrphan.nodes).toHaveLength(beforeOrphan.nodes.length)
+
     // blocker blocks task
     const { createEdge: blocksEdge } = await ok<{
       createEdge: { relation: string; createdAt: string }
@@ -443,6 +485,7 @@ describe('CLI/local-server contract (P1-1)', () => {
       'CREATE_PROJECT',
       'CREATE_NODE',
       'CREATE_TASK',
+      'CREATE_NODE_WITH_PARENT',
       'UPDATE_NODE',
       'UPDATE_STATUS',
       'APPROVE_NODE',

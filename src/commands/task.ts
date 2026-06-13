@@ -8,7 +8,6 @@ import {
   BLOCK_TASK,
   CREATE_TASK,
   DELETE_NODE,
-  LINK_TASK,
   LIST_TASKS,
   READY_TASKS,
   SHOW_TASK,
@@ -35,21 +34,20 @@ taskCommand
   )
   .action(async (opts) => {
     try {
+      // Validate the active feature BEFORE any write so a bad FLOWY_FEATURE
+      // errors cleanly instead of orphaning a node (F24).
       const featureId = requireFeature()
       const description = await resolveDescription({
         description: opts.description,
         descriptionFile: opts.descriptionFile,
       })
+      // One atomic call: the server creates the task and its `part_of` edge to
+      // the feature together, so a failed link can never leave an orphan.
       const data = await graphql<{ createNode: { id: string } }>(CREATE_TASK, {
         type: 'task',
         title: opts.title,
         description,
-      })
-      const taskId = data.createNode.id
-      await graphql(LINK_TASK, {
-        sourceId: taskId,
-        targetId: featureId,
-        relation: 'part_of',
+        parentId: featureId,
       })
       output(data.createNode)
     } catch (error) {
