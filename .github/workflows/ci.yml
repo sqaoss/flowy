@@ -37,8 +37,10 @@ jobs:
         with:
           bun-version: latest
       - run: bun install --frozen-lockfile
-      # Root CLI unit suite (mocked transport).
-      - run: bun run test
+      # Root CLI unit suite (mocked transport) with coverage. `test:coverage`
+      # runs the same suite as `test` plus a v8 report; the config carries a
+      # ratchet threshold (F38), so this step also guards against regressions.
+      - run: bun run test:coverage
       # Server suite — includes the P1-1 CLI/local-server contract guard.
       - run: cd server && bun install --frozen-lockfile
       - run: cd server && bunx --bun vitest run
