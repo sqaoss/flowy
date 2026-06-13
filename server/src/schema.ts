@@ -95,6 +95,12 @@ export const typeDefs = /* GraphQL */ `
       metadata: String
     ): Node!
     approveNode(id: String!): Node!
+    # Atomically claim a task for work (F28). Compare-and-set: flips a claimable
+    # node (draft/pending_review/approved/blocked) to in_progress in a single
+    # statement and returns it. Returns null if the node does not exist, is not
+    # claimable, or was already claimed by a concurrent caller (lost the race) —
+    # so parallel agents never double-claim the same task.
+    claimNode(id: String!): Node
     deleteNode(id: String!): Boolean!
     createEdge(sourceId: String!, targetId: String!, relation: String!): Edge!
     removeEdge(sourceId: String!, targetId: String!, relation: String!): Boolean!

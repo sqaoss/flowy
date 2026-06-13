@@ -23,10 +23,10 @@ describe('task command', () => {
     vi.clearAllMocks()
   })
 
-  test('exports a command group with 8 subcommands', async () => {
+  test('exports a command group with 10 subcommands', async () => {
     const { taskCommand } = await import('./task.ts')
     expect(taskCommand.name()).toBe('task')
-    expect(taskCommand.commands).toHaveLength(8)
+    expect(taskCommand.commands).toHaveLength(10)
 
     const names = taskCommand.commands.map((c) => c.name())
     expect(names).toContain('create')
@@ -37,6 +37,8 @@ describe('task command', () => {
     expect(names).toContain('update')
     expect(names).toContain('delete')
     expect(names).toContain('deps')
+    expect(names).toContain('claim')
+    expect(names).toContain('next')
   })
 
   test('create exposes both --description and --description-file options', async () => {
@@ -436,5 +438,157 @@ describe('task command', () => {
       { id: 'task_1', type: 'task', title: 'One', status: 'draft' },
       { id: 'task_2', type: 'task', title: 'Two', status: 'done' },
     ])
+  })
+
+  test('claim sends claimNode and prints the claimed task', async () => {
+    const { graphql } = await import('../util/client.ts')
+    const { output } = await import('../util/format.ts')
+    const { taskCommand } = await import('./task.ts')
+
+    vi.mocked(graphql).mockResolvedValueOnce({
+      claimNode: { id: 'task_1', status: 'in_progress' },
+    })
+
+    const claimCmd = taskCommand.commands.find((c) => c.name() === 'claim')!
+    await claimCmd.parseAsync(['task_1'], { from: 'user' })
+
+    const [query, variables] = vi.mocked(graphql).mock.calls[0]!
+    expect(query).toContain('claimNode')
+    expect(variables).toMatchObject({ id: 'task_1' })
+    expect(output).toHaveBeenCalledWith({ id: 'task_1', status: 'in_progress' })
+  })
+
+  test('claim reports a lost race (null) via outputError with non-zero exit', async () => {
+    const { graphql } = await import('../util/client.ts')
+    const { output, outputError } = await import('../util/format.ts')
+    const { taskCommand } = await import('./task.ts')
+
+    // claimNode returns null: the task was already claimed / not claimable.
+    vi.mocked(graphql).mockResolvedValueOnce({ claimNode: null })
+
+    const claimCmd = taskCommand.commands.find((c) => c.name() === 'claim')!
+    await claimCmd.parseAsync(['task_1'], { from: 'user' })
+
+    expect(output).not.toHaveBeenCalled()
+    expect(outputError).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: expect.stringMatching(/already claimed|not claimable/i),
+      }),
+    )
+  })
+
+  test('next claims the first ready task and prints it', async () => {
+    const { graphql } = await import('../util/client.ts')
+    const { output } = await import('../util/format.ts')
+    const { taskCommand } = await import('./task.ts')
+
+    vi.mocked(graphql)
+      // readyTasks
+      .mockResolvedValueOnce({
+        readyTasks: [
+          { id: 'task_a', title: 'A', status: 'draft' },
+          { id: 'task_b', title: 'B', status: 'draft' },
+        ],
+      })
+      // claimNode(task_a) wins
+      .mockResolvedValueOnce({
+        claimNode: { id: 'task_a', status: 'in_progress' },
+      })
+
+    const nextCmd = taskCommand.commands.find((c) => c.name() === 'next')!
+    await nextCmd.parseAsync([], { from: 'user' })
+
+    expect(graphql).toHaveBeenCalledTimes(2)
+    const [readyQuery] = vi.mocked(graphql).mock.calls[0]!
+    expect(readyQuery).toContain('readyTasks')
+    const [claimQuery, claimVars] = vi.mocked(graphql).mock.calls[1]!
+    expect(claimQuery).toContain('claimNode')
+    expect(claimVars).toMatchObject({ id: 'task_a' })
+    expect(output).toHaveBeenCalledWith({ id: 'task_a', status: 'in_progress' })
+  })
+
+  test('next retries the next candidate when a claim loses the race', async () => {
+    const { graphql } = await import('../util/client.ts')
+    const { output } = await import('../util/format.ts')
+    const { taskCommand } = await import('./task.ts')
+
+    vi.mocked(graphql)
+      // readyTasks
+      .mockResolvedValueOnce({
+        readyTasks: [
+          { id: 'task_a', title: 'A', status: 'draft' },
+          { id: 'task_b', title: 'B', status: 'draft' },
+        ],
+      })
+      // claimNode(task_a) loses (another agent took it)
+      .mockResolvedValueOnce({ claimNode: null })
+      // claimNode(task_b) wins
+      .mockResolvedValueOnce({
+        claimNode: { id: 'task_b', status: 'in_progress' },
+      })
+
+    const nextCmd = taskCommand.commands.find((c) => c.name() === 'next')!
+    await nextCmd.parseAsync([], { from: 'user' })
+
+    expect(graphql).toHaveBeenCalledTimes(3)
+    expect(vi.mocked(graphql).mock.calls[1]![1]).toMatchObject({ id: 'task_a' })
+    expect(vi.mocked(graphql).mock.calls[2]![1]).toMatchObject({ id: 'task_b' })
+    expect(output).toHaveBeenCalledWith({ id: 'task_b', status: 'in_progress' })
+  })
+
+  test('next reports when no ready tasks exist via outputError', async () => {
+    const { graphql } = await import('../util/client.ts')
+    const { output, outputError } = await import('../util/format.ts')
+    const { taskCommand } = await import('./task.ts')
+
+    vi.mocked(graphql).mockResolvedValueOnce({ readyTasks: [] })
+
+    const nextCmd = taskCommand.commands.find((c) => c.name() === 'next')!
+    await nextCmd.parseAsync([], { from: 'user' })
+
+    expect(output).not.toHaveBeenCalled()
+    expect(outputError).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: expect.stringMatching(/no ready|no claimable/i),
+      }),
+    )
+  })
+
+  test('next reports when every ready task lost its race via outputError', async () => {
+    const { graphql } = await import('../util/client.ts')
+    const { output, outputError } = await import('../util/format.ts')
+    const { taskCommand } = await import('./task.ts')
+
+    vi.mocked(graphql)
+      .mockResolvedValueOnce({
+        readyTasks: [{ id: 'task_a', title: 'A', status: 'draft' }],
+      })
+      .mockResolvedValueOnce({ claimNode: null }) // lost
+
+    const nextCmd = taskCommand.commands.find((c) => c.name() === 'next')!
+    await nextCmd.parseAsync([], { from: 'user' })
+
+    expect(output).not.toHaveBeenCalled()
+    expect(outputError).toHaveBeenCalled()
+  })
+
+  test('next --project scopes readyTasks to the given project', async () => {
+    const { graphql } = await import('../util/client.ts')
+    const { taskCommand } = await import('./task.ts')
+
+    vi.mocked(graphql)
+      .mockResolvedValueOnce({
+        readyTasks: [{ id: 'task_a', title: 'A', status: 'draft' }],
+      })
+      .mockResolvedValueOnce({
+        claimNode: { id: 'task_a', status: 'in_progress' },
+      })
+
+    const nextCmd = taskCommand.commands.find((c) => c.name() === 'next')!
+    await nextCmd.parseAsync(['--project', 'proj_42'], { from: 'user' })
+
+    const [readyQuery, readyVars] = vi.mocked(graphql).mock.calls[0]!
+    expect(readyQuery).toContain('readyTasks')
+    expect(readyVars).toMatchObject({ projectId: 'proj_42' })
   })
 })

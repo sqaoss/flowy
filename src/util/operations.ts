@@ -209,6 +209,20 @@ export const APPROVE_NODE = `mutation ApproveNode($id: String!) {
   approveNode(id: $id) { id type title status updatedAt }
 }`
 
+/**
+ * task.ts `claim`/`next` — atomically claim a task for work (F28). The server
+ * compare-and-sets a claimable node (draft/pending_review/approved/blocked) to
+ * in_progress and returns it; it returns `null` when the node is missing, not
+ * claimable, or was already claimed by a concurrent caller (lost the race), so
+ * parallel agents never double-claim the same task. Served by BOTH backends:
+ * the bundled local server (since P2-1) and SaaS (flowy-ai v35).
+ */
+export const CLAIM_NODE = `mutation ClaimNode($id: String!) {
+  claimNode(id: $id) {
+    id type title description status metadata createdAt updatedAt
+  }
+}`
+
 /** project/feature/task `delete` — remove a node (and its edges). */
 export const DELETE_NODE = `mutation DeleteNode($id: String!) {
   deleteNode(id: $id)
@@ -352,6 +366,7 @@ export const LOCAL_CONTRACT_OPERATIONS = {
   UPDATE_NODE,
   UPDATE_STATUS,
   APPROVE_NODE,
+  CLAIM_NODE,
   DELETE_NODE,
   CREATE_EDGE,
   LINK_TASK,
