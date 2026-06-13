@@ -48,7 +48,7 @@
   "scripts": {
     "cli": "bun src/index.ts",
     "audit": "bun audit",
-    "audit:prod": "bun audit --prod",
+    "audit:prod": "bun audit --production --json",
     "check": "biome check --write .",
     "test": "vitest run",
     "test:watch": "vitest",
