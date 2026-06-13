@@ -41,6 +41,36 @@ export interface NodeGql {
 }
 
 /**
+ * An audit-log entry, shaped to match the SaaS `auditLog` GraphQL field
+ * (id, nodeId, action, field, oldValue, newValue, snapshot, changedBy,
+ * createdAt) so `flowy history` output is consistent across backends.
+ * `snapshot` is a JSON string (or null), mirroring SaaS.
+ */
+export interface AuditEntryGql {
+  id: string
+  nodeId: string | null
+  action: string
+  field: string | null
+  oldValue: string | null
+  newValue: string | null
+  snapshot: string | null
+  changedBy: string
+  createdAt: string
+}
+
+interface AuditRow {
+  id: string
+  node_id: string | null
+  action: string
+  field: string | null
+  old_value: string | null
+  new_value: string | null
+  snapshot: string | null
+  changed_by: string
+  created_at: string
+}
+
+/**
  * A node returned from a subtree traversal, annotated with the edge that pulled
  * it in: `parentId` (the node it descends from), `depth` (1 for the root's
  * direct children), and `relation` (the relation of the linking edge).
@@ -103,6 +133,57 @@ function normalizeMetadata(metadata: string): string {
 function generateId(type: string): string {
   const prefix = PREFIX_MAP[type] ?? type
   return `${prefix}_${nanoid(12)}`
+}
+
+// The bundled local server is single-tenant and unauthenticated, so every
+// audit entry is attributed to a single constant actor. SaaS uses the user id.
+const LOCAL_ACTOR = 'local'
+
+interface AuditInput {
+  nodeId: string | null
+  action: string
+  field?: string | null
+  oldValue?: string | null
+  newValue?: string | null
+  snapshot?: Record<string, unknown> | null
+}
+
+/**
+ * Write one audit_log row. Call inside the same transaction as the mutation so
+ * the change and its audit trail commit (or roll back) together. SQLite's
+ * `datetime('now')` resolves to whole seconds, which is too coarse to order
+ * multiple entries written in the same call; we pass an explicit ISO timestamp
+ * with sub-second precision so `ORDER BY created_at DESC` is stable.
+ */
+function insertAudit(db: Db, input: AuditInput): void {
+  db.raw.run(
+    'INSERT INTO audit_log (id, node_id, action, field, old_value, new_value, snapshot, changed_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    [
+      `audit_${nanoid(12)}`,
+      input.nodeId,
+      input.action,
+      input.field ?? null,
+      input.oldValue ?? null,
+      input.newValue ?? null,
+      input.snapshot != null ? JSON.stringify(input.snapshot) : null,
+      LOCAL_ACTOR,
+      new Date().toISOString(),
+    ],
+  )
+}
+
+function rowToAudit(row: AuditRow): AuditEntryGql {
+  return {
+    id: row.id,
+    nodeId: row.node_id,
+    action: row.action,
+    field: row.field,
+    oldValue: row.old_value,
+    newValue: row.new_value,
+    snapshot: row.snapshot,
+    changedBy: row.changed_by,
+    createdAt: row.created_at,
+  }
 }
 
 function rowToNode(row: NodeRow): NodeGql {
@@ -330,6 +411,24 @@ export function createResolvers(db: Db) {
           .all(...params, limit) as NodeRow[]
         return selectNodes(rows)
       },
+
+      // Audit history for a node, newest first. Shaped to match the SaaS
+      // `auditLog` field so `flowy history` output is consistent across
+      // backends. `delete` entries set node_id to null (the node is gone), so
+      // they are not returned here — the deletion is still recorded in the
+      // table with the pre-delete snapshot.
+      auditLog: (
+        _: unknown,
+        args: { nodeId: string; limit?: number },
+      ): AuditEntryGql[] => {
+        const limit = args.limit ?? 50
+        const rows = db.raw
+          .query(
+            'SELECT * FROM audit_log WHERE node_id = ? ORDER BY created_at DESC, rowid DESC LIMIT ?',
+          )
+          .all(args.nodeId, limit) as AuditRow[]
+        return rows.map(rowToAudit)
+      },
     },
 
     Mutation: {
@@ -354,11 +453,7 @@ export function createResolvers(db: Db) {
         const now = new Date().toISOString()
         const description = args.description ?? null
         const status = args.status ?? 'draft'
-        db.raw.run(
-          'INSERT INTO nodes (id, type, title, description, status, metadata, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-          [id, args.type, args.title, description, status, metadata, now, now],
-        )
-        return {
+        const node: NodeGql = {
           id,
           type: args.type,
           title: args.title,
@@ -368,6 +463,27 @@ export function createResolvers(db: Db) {
           createdAt: now,
           updatedAt: now,
         }
+        db.raw.transaction(() => {
+          db.raw.run(
+            'INSERT INTO nodes (id, type, title, description, status, metadata, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+            [
+              id,
+              args.type,
+              args.title,
+              description,
+              status,
+              metadata,
+              now,
+              now,
+            ],
+          )
+          insertAudit(db, {
+            nodeId: id,
+            action: 'create',
+            snapshot: node as unknown as Record<string, unknown>,
+          })
+        })()
+        return node
       },
 
       updateNode: (
@@ -406,25 +522,77 @@ export function createResolvers(db: Db) {
               ? normalizeMetadata(args.metadata)
               : existing.metadata,
         }
+        // Field-level diffs, mirroring SaaS: title/description/metadata changes
+        // are 'update' entries; a status change is a 'status_change' entry.
+        const diffs: Array<{
+          field: string
+          action: string
+          oldValue: string | null
+          newValue: string | null
+        }> = []
+        if (next.title !== existing.title) {
+          diffs.push({
+            field: 'title',
+            action: 'update',
+            oldValue: existing.title,
+            newValue: next.title,
+          })
+        }
+        if (next.description !== existing.description) {
+          diffs.push({
+            field: 'description',
+            action: 'update',
+            oldValue: existing.description,
+            newValue: next.description,
+          })
+        }
+        if (next.status !== existing.status) {
+          diffs.push({
+            field: 'status',
+            action: 'status_change',
+            oldValue: existing.status,
+            newValue: next.status,
+          })
+        }
+        if (next.metadata !== existing.metadata) {
+          diffs.push({
+            field: 'metadata',
+            action: 'update',
+            oldValue: existing.metadata,
+            newValue: next.metadata,
+          })
+        }
+
         const now = new Date().toISOString()
-        db.raw.run(
-          'UPDATE nodes SET title = ?, description = ?, status = ?, metadata = ?, updated_at = ? WHERE id = ?',
-          [
-            next.title,
-            next.description,
-            next.status,
-            next.metadata,
-            now,
-            args.id,
-          ],
-        )
+        db.raw.transaction(() => {
+          db.raw.run(
+            'UPDATE nodes SET title = ?, description = ?, status = ?, metadata = ?, updated_at = ? WHERE id = ?',
+            [
+              next.title,
+              next.description,
+              next.status,
+              next.metadata,
+              now,
+              args.id,
+            ],
+          )
+          for (const d of diffs) {
+            insertAudit(db, {
+              nodeId: args.id,
+              action: d.action,
+              field: d.field,
+              oldValue: d.oldValue,
+              newValue: d.newValue,
+            })
+          }
+        })()
         return rowToNode({ ...next, updated_at: now })
       },
 
       deleteNode: (_: unknown, args: { id: string }): boolean => {
         const existing = db.raw
-          .query('SELECT id FROM nodes WHERE id = ?')
-          .get(args.id) as { id: string } | null
+          .query(`SELECT ${NODE_COLS} FROM nodes WHERE id = ?`)
+          .get(args.id) as NodeRow | null
         if (!existing) throw notFoundError(`Node ${args.id} not found`)
 
         // The hierarchy is client -> project -> feature -> task via `part_of`
@@ -442,6 +610,15 @@ export function createResolvers(db: Db) {
         }
 
         db.raw.transaction(() => {
+          // Record the delete with the pre-delete snapshot BEFORE removing the
+          // node. node_id is null (the node is gone) to match SaaS. The FK's
+          // ON DELETE SET NULL also nulls node_id on the node's prior audit
+          // rows when the node row below is deleted.
+          insertAudit(db, {
+            nodeId: null,
+            action: 'delete',
+            snapshot: rowToNode(existing) as unknown as Record<string, unknown>,
+          })
           db.raw.run('DELETE FROM edges WHERE source_id = ? OR target_id = ?', [
             args.id,
             args.id,
@@ -462,11 +639,19 @@ export function createResolvers(db: Db) {
           )
         }
         const now = new Date().toISOString()
-        db.raw.run('UPDATE nodes SET status = ?, updated_at = ? WHERE id = ?', [
-          'approved',
-          now,
-          args.id,
-        ])
+        db.raw.transaction(() => {
+          db.raw.run(
+            'UPDATE nodes SET status = ?, updated_at = ? WHERE id = ?',
+            ['approved', now, args.id],
+          )
+          insertAudit(db, {
+            nodeId: args.id,
+            action: 'approve',
+            field: 'status',
+            oldValue: 'pending_review',
+            newValue: 'approved',
+          })
+        })()
         return rowToNode({ ...existing, status: 'approved', updated_at: now })
       },
 
@@ -496,10 +681,20 @@ export function createResolvers(db: Db) {
           throw validationError('A node cannot block itself')
         }
         const now = new Date().toISOString()
-        db.raw.run(
-          'INSERT INTO edges (source_id, target_id, relation, created_at) VALUES (?, ?, ?, ?)',
-          [args.sourceId, args.targetId, args.relation, now],
-        )
+        db.raw.transaction(() => {
+          db.raw.run(
+            'INSERT INTO edges (source_id, target_id, relation, created_at) VALUES (?, ?, ?, ?)',
+            [args.sourceId, args.targetId, args.relation, now],
+          )
+          // Record the edge against its source node so `auditLog(sourceId)`
+          // surfaces it. field = relation; newValue = the target it now links.
+          insertAudit(db, {
+            nodeId: args.sourceId,
+            action: 'create_edge',
+            field: args.relation,
+            newValue: args.targetId,
+          })
+        })()
         return {
           sourceId: args.sourceId,
           targetId: args.targetId,
@@ -512,11 +707,25 @@ export function createResolvers(db: Db) {
         _: unknown,
         args: { sourceId: string; targetId: string; relation: string },
       ) => {
-        const result = db.raw.run(
-          'DELETE FROM edges WHERE source_id = ? AND target_id = ? AND relation = ?',
-          [args.sourceId, args.targetId, args.relation],
-        )
-        return result.changes > 0
+        let changed = false
+        db.raw.transaction(() => {
+          const result = db.raw.run(
+            'DELETE FROM edges WHERE source_id = ? AND target_id = ? AND relation = ?',
+            [args.sourceId, args.targetId, args.relation],
+          )
+          changed = result.changes > 0
+          // Only audit an edge that actually existed. oldValue = the target the
+          // edge linked to before removal.
+          if (changed) {
+            insertAudit(db, {
+              nodeId: args.sourceId,
+              action: 'remove_edge',
+              field: args.relation,
+              oldValue: args.targetId,
+            })
+          }
+        })()
+        return changed
       },
     },
   }

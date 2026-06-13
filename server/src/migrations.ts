@@ -116,6 +116,33 @@ const MIGRATIONS: Migration[] = [
     db.run('CREATE INDEX IF NOT EXISTS idx_nodes_type ON nodes(type)')
     db.run('CREATE INDEX IF NOT EXISTS idx_nodes_status ON nodes(status)')
   },
+
+  // 2 -> 3: add the `audit_log` table (F27). Mirrors the SaaS audit_log schema
+  // (id, node_id, action, field, old_value, new_value, snapshot, changed_by,
+  // created_at) so `flowy history` output is consistent across backends. The
+  // local server is single-tenant and has no users table, so `changed_by`
+  // carries a constant actor ('local') rather than a FK to a user. `node_id`
+  // is nullable and ON DELETE SET NULL so delete-audit rows survive the node.
+  // Uses IF NOT EXISTS so the step is idempotent on a DB that somehow already
+  // has the table.
+  (db) => {
+    db.run(`
+      CREATE TABLE IF NOT EXISTS audit_log (
+        id TEXT PRIMARY KEY,
+        node_id TEXT REFERENCES nodes(id) ON DELETE SET NULL,
+        action TEXT NOT NULL,
+        field TEXT,
+        old_value TEXT,
+        new_value TEXT,
+        snapshot TEXT,
+        changed_by TEXT NOT NULL DEFAULT 'local',
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      )
+    `)
+    db.run(
+      'CREATE INDEX IF NOT EXISTS idx_audit_log_node ON audit_log(node_id)',
+    )
+  },
 ]
 
 export const LATEST_VERSION = MIGRATIONS.length

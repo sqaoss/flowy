@@ -81,6 +81,7 @@ describe('commands send canonical operations (no re-inlined queries)', () => {
     'approve.ts': ['APPROVE_NODE'],
     'search.ts': ['SEARCH'],
     'tree.ts': ['SUBTREE'],
+    'history.ts': ['AUDIT_LOG'],
     'whoami.ts': ['WHOAMI'],
     'billing.ts': ['CREATE_CHECKOUT'],
     'key.ts': ['ROTATE_API_KEY'],

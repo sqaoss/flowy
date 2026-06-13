@@ -31,9 +31,11 @@
  *   - `rotateApiKey`    (key.ts)    — API key lifecycle; local has no keys.
  *   - `createCheckout`  (billing.ts)— Polar checkout; local has no billing.
  *
- * Conversely, the SaaS schema carries operations the local server lacks and the
- * CLI does not yet call against local: `auditLog`/`getAuditLog` (P1-2 will port
- * this to local), `ancestors`, and `nodes(status/limit/offset)` pagination.
+ * Conversely, the SaaS schema carries some operations the local server still
+ * lacks and the CLI does not yet call against local: `ancestors` and
+ * `nodes(status/limit/offset)` pagination. (`auditLog` was such a divergence
+ * until P1-2/F27 ported it to the bundled local server; it is now part of
+ * LOCAL_CONTRACT_OPERATIONS and exercised below.)
  * Status vocabulary and edge relations are shared (`part_of`, `blocks`); the
  * SaaS schema additionally recognises `epic`/`depends_on`/`informs` relations
  * the bundled server does not. The test below asserts the local server rejects
@@ -364,6 +366,38 @@ describe('CLI/local-server contract (P1-1)', () => {
     )
     expect(search.search.some((n) => n.id === project.id)).toBe(true)
 
+    // auditLog (P1-2/F27): the task has accumulated a trail — a `create` on
+    // insert, a `status_change` to pending_review, an `approve`, plus the
+    // content `update`s. Entries come back newest-first and carry the
+    // SaaS-shaped fields.
+    const history = await ok<{
+      auditLog: Array<{
+        id: string
+        action: string
+        field: string | null
+        oldValue: string | null
+        newValue: string | null
+        snapshot: string | null
+        changedBy: string
+        createdAt: string
+      }>
+    }>(LOCAL_CONTRACT_OPERATIONS.AUDIT_LOG, { nodeId: task.id, limit: 50 })
+    const actions = history.auditLog.map((e) => e.action)
+    expect(actions).toContain('create')
+    expect(actions).toContain('status_change')
+    expect(actions).toContain('approve')
+    // changedBy default actor + ISO timestamps
+    expect(history.auditLog.every((e) => e.changedBy === 'local')).toBe(true)
+    expect(history.auditLog.every((e) => typeof e.createdAt === 'string')).toBe(
+      true,
+    )
+    // the status_change entry carries the field-level diff
+    const statusEntry = history.auditLog.find(
+      (e) => e.action === 'status_change',
+    )
+    expect(statusEntry?.field).toBe('status')
+    expect(statusEntry?.newValue).toBe('pending_review')
+
     // --- Edge removal + node deletion --------------------------------------
     const { removeEdge } = await ok<{ removeEdge: boolean }>(
       LOCAL_CONTRACT_OPERATIONS.UNBLOCK_TASK,
@@ -414,6 +448,7 @@ describe('CLI/local-server contract (P1-1)', () => {
       'EXPORT_PROJECT',
       'EXPORT_DESCENDANTS',
       'EXPORT_EDGES',
+      'AUDIT_LOG',
     ])
     expect(new Set(Object.keys(LOCAL_CONTRACT_OPERATIONS))).toEqual(exercised)
   })

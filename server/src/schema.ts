@@ -19,6 +19,21 @@ export const typeDefs = /* GraphQL */ `
     createdAt: String!
   }
 
+  # An audit-log entry. Shaped to match the SaaS \`auditLog\` field so
+  # \`flowy history\` output is consistent across backends. \`snapshot\` is a
+  # JSON-encoded string (or null).
+  type AuditEntry {
+    id: String!
+    nodeId: String
+    action: String!
+    field: String
+    oldValue: String
+    newValue: String
+    snapshot: String
+    changedBy: String!
+    createdAt: String!
+  }
+
   # A node returned from a subtree traversal, annotated with how it was reached:
   # the parent it descends from (parentId), how many edges down the root it sits
   # (depth, root's direct children are depth 1), and the relation of the edge
@@ -45,6 +60,7 @@ export const typeDefs = /* GraphQL */ `
     edges(nodeId: String!, relation: String!, direction: String): [Node!]!
     readyTasks(projectId: String): [Node!]!
     search(query: String!, type: String, status: String, limit: Int): [Node!]!
+    auditLog(nodeId: String!, limit: Int): [AuditEntry!]!
   }
 
   type Mutation {
