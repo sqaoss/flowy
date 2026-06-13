@@ -255,6 +255,41 @@ describe('CLI/local-server contract (P1-1)', () => {
     expect(updateNode.title).toBe('Renamed Task')
     expect(updateNode.metadata).toContain('note')
 
+    // CLAIM_NODE (P2-1/F28): atomically claim a task for work. A fresh draft
+    // task is claimable -> flips to in_progress and is returned. A second claim
+    // on the same (now in_progress) task loses the race -> claimNode is null.
+    // A non-claimable (done) task is also rejected with null. This is the
+    // primitive `task claim`/`task next` use so parallel agents never
+    // double-claim; the SaaS contract guard mirrors it (flowy-ai v35).
+    const { createNode: claimable } = await ok<{
+      createNode: { id: string }
+    }>(LOCAL_CONTRACT_OPERATIONS.CREATE_TASK, {
+      type: 'task',
+      title: 'Claimable Task',
+      description: 'up for grabs',
+    })
+    const firstClaim = await ok<{
+      claimNode: { id: string; status: string } | null
+    }>(LOCAL_CONTRACT_OPERATIONS.CLAIM_NODE, { id: claimable.id })
+    expect(firstClaim.claimNode?.id).toBe(claimable.id)
+    expect(firstClaim.claimNode?.status).toBe('in_progress')
+    // Second claim on the same task loses: already in_progress, not claimable.
+    const secondClaim = await ok<{ claimNode: { id: string } | null }>(
+      LOCAL_CONTRACT_OPERATIONS.CLAIM_NODE,
+      { id: claimable.id },
+    )
+    expect(secondClaim.claimNode).toBeNull()
+    // A done task is never claimable.
+    await ok(LOCAL_CONTRACT_OPERATIONS.UPDATE_STATUS, {
+      id: claimable.id,
+      status: 'done',
+    })
+    const doneClaim = await ok<{ claimNode: { id: string } | null }>(
+      LOCAL_CONTRACT_OPERATIONS.CLAIM_NODE,
+      { id: claimable.id },
+    )
+    expect(doneClaim.claimNode).toBeNull()
+
     // --- Queries: reads ----------------------------------------------------
     const getNode = await ok<{ node: { id: string } | null }>(
       LOCAL_CONTRACT_OPERATIONS.GET_NODE,
@@ -489,6 +524,7 @@ describe('CLI/local-server contract (P1-1)', () => {
       'UPDATE_NODE',
       'UPDATE_STATUS',
       'APPROVE_NODE',
+      'CLAIM_NODE',
       'DELETE_NODE',
       'CREATE_EDGE',
       'LINK_TASK',

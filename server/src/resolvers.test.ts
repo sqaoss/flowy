@@ -395,6 +395,40 @@ describe('createResolvers', () => {
         expect(e.extensions?.code).toBe('VALIDATION_ERROR')
       }
     })
+
+    it('applies the row update and its audit rows in one transaction (F28)', () => {
+      // The read-modify-write must be a single transaction so a node update and
+      // its audit trail commit together. We assert the observable contract: a
+      // multi-field update lands the row change AND exactly the matching audit
+      // entries (no partial application).
+      const node = create(resolvers, {
+        type: 'task',
+        title: 'Old',
+        description: 'old body',
+      })
+      const auditBefore = resolvers.Query.auditLog(null, {
+        nodeId: node.id,
+      }).length
+      const updated = resolvers.Mutation.updateNode(null, {
+        id: node.id,
+        title: 'New',
+        status: 'in_progress',
+      })
+      expect(updated.title).toBe('New')
+      expect(updated.status).toBe('in_progress')
+      // Row change is persisted (read-back).
+      const persisted = find(resolvers, node.id)
+      expect(persisted.title).toBe('New')
+      expect(persisted.status).toBe('in_progress')
+      // Two field diffs -> two new audit rows (a title `update` + a
+      // `status_change`), committed in the same unit as the row write.
+      const history = resolvers.Query.auditLog(null, { nodeId: node.id })
+      expect(history.length).toBe(auditBefore + 2)
+      expect(history.some((e) => e.action === 'status_change')).toBe(true)
+      expect(
+        history.some((e) => e.action === 'update' && e.field === 'title'),
+      ).toBe(true)
+    })
   })
 
   describe('Mutation.deleteNode', () => {
@@ -511,6 +545,73 @@ describe('createResolvers', () => {
       expect(() =>
         resolvers.Mutation.approveNode(null, { id: 'nonexistent' }),
       ).toThrow('Node nonexistent not found')
+    })
+  })
+
+  describe('Mutation.claimNode (F28 atomic CAS)', () => {
+    const CLAIMABLE = ['draft', 'pending_review', 'approved', 'blocked']
+
+    it.each(
+      CLAIMABLE,
+    )('claims a %s task into in_progress and returns it', (status) => {
+      const node = create(resolvers, { type: 'task', title: 'Claim me' })
+      if (status !== 'draft') {
+        resolvers.Mutation.updateNode(null, { id: node.id, status })
+      }
+      const claimed = resolvers.Mutation.claimNode(null, { id: node.id })
+      expect(claimed).not.toBeNull()
+      expect(claimed?.id).toBe(node.id)
+      expect(claimed?.status).toBe('in_progress')
+      // The change is persisted, not just returned.
+      expect(find(resolvers, node.id).status).toBe('in_progress')
+    })
+
+    it('returns null when the node is already in_progress (lost the race)', () => {
+      const node = create(resolvers, { type: 'task', title: 'Hot' })
+      const first = resolvers.Mutation.claimNode(null, { id: node.id })
+      expect(first?.status).toBe('in_progress')
+      // A second claim on the same node loses: CAS no longer matches.
+      const second = resolvers.Mutation.claimNode(null, { id: node.id })
+      expect(second).toBeNull()
+      // Still in_progress, untouched by the losing claim.
+      expect(find(resolvers, node.id).status).toBe('in_progress')
+    })
+
+    it.each([
+      'done',
+      'cancelled',
+      'in_progress',
+    ])('returns null for a non-claimable %s node', (status) => {
+      const node = create(resolvers, { type: 'task', title: 'Nope' })
+      resolvers.Mutation.updateNode(null, { id: node.id, status })
+      const claimed = resolvers.Mutation.claimNode(null, { id: node.id })
+      expect(claimed).toBeNull()
+      expect(find(resolvers, node.id).status).toBe(status)
+    })
+
+    it('returns null for a nonexistent node (nothing to claim)', () => {
+      expect(
+        resolvers.Mutation.claimNode(null, { id: 'task_missing' }),
+      ).toBeNull()
+    })
+
+    it('records a status_change audit entry on a successful claim', () => {
+      const node = create(resolvers, { type: 'task', title: 'Audited' })
+      resolvers.Mutation.claimNode(null, { id: node.id })
+      const history = resolvers.Query.auditLog(null, { nodeId: node.id })
+      const statusChange = history.find((e) => e.action === 'status_change')
+      expect(statusChange?.field).toBe('status')
+      expect(statusChange?.oldValue).toBe('draft')
+      expect(statusChange?.newValue).toBe('in_progress')
+    })
+
+    it('writes no audit entry when the claim loses', () => {
+      const node = create(resolvers, { type: 'task', title: 'Loser' })
+      resolvers.Mutation.claimNode(null, { id: node.id })
+      const before = resolvers.Query.auditLog(null, { nodeId: node.id }).length
+      resolvers.Mutation.claimNode(null, { id: node.id }) // loses
+      const after = resolvers.Query.auditLog(null, { nodeId: node.id }).length
+      expect(after).toBe(before)
     })
   })
 

@@ -118,6 +118,15 @@ const VALID_STATUSES = new Set([
   'cancelled',
 ])
 
+/**
+ * Statuses a task may be atomically claimed *from* by `claimNode` (F28). A claim
+ * flips any of these to `in_progress` in a single CAS statement. `in_progress`,
+ * `done`, and `cancelled` are intentionally excluded: an already-claimed,
+ * finished, or abandoned task is not up for grabs. Kept in lockstep with the
+ * SaaS `CLAIMABLE_STATUSES` so a claim behaves identically across backends.
+ */
+const CLAIMABLE_STATUSES = ['draft', 'pending_review', 'approved', 'blocked']
+
 function assertValidStatus(status: string): void {
   if (!VALID_STATUSES.has(status)) {
     throw validationError(
@@ -588,80 +597,92 @@ export function createResolvers(db: Db, opts: ResolverOptions = {}) {
           metadata?: string
         },
       ) => {
-        const existing = db.raw
-          .query('SELECT * FROM nodes WHERE id = ?')
-          .get(args.id) as NodeRow | null
-        if (!existing) throw notFoundError(`Node ${args.id} not found`)
-
+        // Input validation that does NOT depend on the current row is done up
+        // front so a malformed request errors before opening a transaction.
         if (args.title != null && !args.title.trim()) {
           throw validationError('Title cannot be empty')
         }
         if (args.description != null && !args.description.trim()) {
           throw validationError('Description cannot be empty')
         }
-        if (args.status != null) {
-          assertValidStatus(args.status)
-          if (enforceStatusLifecycle) {
-            assertValidTransition(existing.status, args.status)
-          }
-        }
-
-        const next: NodeRow = {
-          ...existing,
-          title: args.title ?? existing.title,
-          description:
-            args.description !== undefined
-              ? args.description
-              : existing.description,
-          status: args.status ?? existing.status,
-          metadata:
-            args.metadata != null
-              ? normalizeMetadata(args.metadata)
-              : existing.metadata,
-        }
-        // Field-level diffs, mirroring SaaS: title/description/metadata changes
-        // are 'update' entries; a status change is a 'status_change' entry.
-        const diffs: Array<{
-          field: string
-          action: string
-          oldValue: string | null
-          newValue: string | null
-        }> = []
-        if (next.title !== existing.title) {
-          diffs.push({
-            field: 'title',
-            action: 'update',
-            oldValue: existing.title,
-            newValue: next.title,
-          })
-        }
-        if (next.description !== existing.description) {
-          diffs.push({
-            field: 'description',
-            action: 'update',
-            oldValue: existing.description,
-            newValue: next.description,
-          })
-        }
-        if (next.status !== existing.status) {
-          diffs.push({
-            field: 'status',
-            action: 'status_change',
-            oldValue: existing.status,
-            newValue: next.status,
-          })
-        }
-        if (next.metadata !== existing.metadata) {
-          diffs.push({
-            field: 'metadata',
-            action: 'update',
-            oldValue: existing.metadata,
-            newValue: next.metadata,
-          })
-        }
+        if (args.status != null) assertValidStatus(args.status)
+        // Normalize metadata up front too: a non-JSON value must be rejected
+        // (VALIDATION_ERROR) without touching the database.
+        const nextMetadata =
+          args.metadata != null ? normalizeMetadata(args.metadata) : undefined
 
         const now = new Date().toISOString()
+        // Transactional read-modify-write (F28). The SELECT, the diff, the
+        // UPDATE, and the audit rows all run inside ONE transaction so a
+        // mid-update failure rolls the whole unit back (never a half-applied
+        // row with no audit, or vice versa) and the read can't observe a row a
+        // concurrent writer is mid-mutating. SQLite is a single writer, so the
+        // transaction also serializes this RMW against any other write —
+        // matching the SaaS FOR UPDATE row lock.
+        let next!: NodeRow
         db.raw.transaction(() => {
+          const existing = db.raw
+            .query('SELECT * FROM nodes WHERE id = ?')
+            .get(args.id) as NodeRow | null
+          if (!existing) throw notFoundError(`Node ${args.id} not found`)
+          // The lifecycle transition check reads the current status, so it
+          // belongs inside the transaction with the row it validates against.
+          if (args.status != null && enforceStatusLifecycle) {
+            assertValidTransition(existing.status, args.status)
+          }
+
+          next = {
+            ...existing,
+            title: args.title ?? existing.title,
+            description:
+              args.description !== undefined
+                ? args.description
+                : existing.description,
+            status: args.status ?? existing.status,
+            metadata:
+              nextMetadata !== undefined ? nextMetadata : existing.metadata,
+          }
+          // Field-level diffs, mirroring SaaS: title/description/metadata
+          // changes are 'update' entries; a status change is 'status_change'.
+          const diffs: Array<{
+            field: string
+            action: string
+            oldValue: string | null
+            newValue: string | null
+          }> = []
+          if (next.title !== existing.title) {
+            diffs.push({
+              field: 'title',
+              action: 'update',
+              oldValue: existing.title,
+              newValue: next.title,
+            })
+          }
+          if (next.description !== existing.description) {
+            diffs.push({
+              field: 'description',
+              action: 'update',
+              oldValue: existing.description,
+              newValue: next.description,
+            })
+          }
+          if (next.status !== existing.status) {
+            diffs.push({
+              field: 'status',
+              action: 'status_change',
+              oldValue: existing.status,
+              newValue: next.status,
+            })
+          }
+          if (next.metadata !== existing.metadata) {
+            diffs.push({
+              field: 'metadata',
+              action: 'update',
+              oldValue: existing.metadata,
+              newValue: next.metadata,
+            })
+          }
+
           db.raw.run(
             'UPDATE nodes SET title = ?, description = ?, status = ?, metadata = ?, updated_at = ? WHERE id = ?',
             [
@@ -750,6 +771,52 @@ export function createResolvers(db: Db, opts: ResolverOptions = {}) {
           })
         })()
         return rowToNode({ ...existing, status: 'approved', updated_at: now })
+      },
+
+      // Atomically claim a task for work (F28). A single compare-and-set
+      // `UPDATE ... WHERE id = ? AND status IN (<claimable>)` flips a claimable
+      // node to in_progress and returns the new row via RETURNING. SQLite is a
+      // single writer, so the statement is its own atomic unit: exactly one of
+      // two concurrent claimers can match the WHERE clause and get a row back;
+      // the loser's UPDATE matches nothing and returns null. This is the
+      // primitive that lets parallel agents share one backlog without
+      // double-claiming. Returns null when the node is missing, already
+      // in_progress/done/cancelled, or lost the race. Mirrors SaaS `claimNode`.
+      claimNode: (_: unknown, args: { id: string }): NodeGql | null => {
+        const placeholders = CLAIMABLE_STATUSES.map(() => '?').join(', ')
+        const now = new Date().toISOString()
+        let claimed: NodeRow | null = null
+        // Read-then-CAS inside ONE transaction. SQLite is a single writer, so
+        // the transaction serializes against any concurrent claimer: we capture
+        // the prior status (for an accurate audit oldValue), then run the gated
+        // CAS. Reading first is safe precisely because the write below is in the
+        // same atomic unit — no other writer can slip in between. The CAS
+        // (`WHERE status IN (<claimable>)`) is still the source of truth for who
+        // wins; the prior read only labels the audit entry.
+        db.raw.transaction(() => {
+          const prior = db.raw
+            .query('SELECT status FROM nodes WHERE id = ?')
+            .get(args.id) as { status: string } | null
+          claimed = db.raw
+            .query(
+              `UPDATE nodes SET status = 'in_progress', updated_at = ?
+               WHERE id = ? AND status IN (${placeholders})
+               RETURNING ${NODE_COLS}`,
+            )
+            .get(now, args.id, ...CLAIMABLE_STATUSES) as NodeRow | null
+          // Only the winner audits a status_change; a losing/no-match claim
+          // touches no row and writes nothing.
+          if (claimed) {
+            insertAudit(db, {
+              nodeId: claimed.id,
+              action: 'status_change',
+              field: 'status',
+              oldValue: prior?.status ?? null,
+              newValue: 'in_progress',
+            })
+          }
+        })()
+        return claimed ? rowToNode(claimed) : null
       },
 
       createEdge: (

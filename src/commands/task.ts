@@ -6,6 +6,7 @@ import { output, outputError } from '../util/format.ts'
 import {
   ALL_TASKS,
   BLOCK_TASK,
+  CLAIM_NODE,
   CREATE_TASK,
   DELETE_NODE,
   LIST_TASKS,
@@ -15,6 +16,12 @@ import {
   UNBLOCK_TASK,
   UPDATE_NODE,
 } from '../util/operations.ts'
+
+/** A task as returned by claimNode/readyTasks selections. */
+interface ClaimedTask {
+  id: string
+  [key: string]: unknown
+}
 
 export const taskCommand = new Command('task').description(
   'Manage tasks in the active feature',
@@ -166,6 +173,80 @@ taskCommand
     try {
       const data = await graphql<{ deleteNode: boolean }>(DELETE_NODE, { id })
       output({ deleted: data.deleteNode })
+    } catch (error) {
+      outputError(error)
+    }
+  })
+
+taskCommand
+  .command('claim')
+  .description(
+    'Atomically claim a task for work (draft/pending_review/approved/blocked → in_progress)',
+  )
+  .argument('<id>', 'Task ID')
+  .action(async (id: string) => {
+    try {
+      // One atomic compare-and-set on the server: the task flips to in_progress
+      // only if it is still claimable, so two agents can never both claim it.
+      const data = await graphql<{ claimNode: ClaimedTask | null }>(
+        CLAIM_NODE,
+        {
+          id,
+        },
+      )
+      if (!data.claimNode) {
+        // Lost the race or never claimable. Surface a clear message + non-zero
+        // exit so a caller (or a wrapping script) can branch on the failure.
+        throw new Error(
+          `Could not claim ${id}: already claimed by another agent or not claimable (must be draft/pending_review/approved/blocked).`,
+        )
+      }
+      output(data.claimNode)
+    } catch (error) {
+      outputError(error)
+    }
+  })
+
+taskCommand
+  .command('next')
+  .description(
+    'Atomically claim the next ready task — picks a ready task and claims it, ' +
+      'retrying past any a concurrent agent grabs first',
+  )
+  .option(
+    '--project <id>',
+    'Scope to a project (defaults to the active project; omit with --all)',
+  )
+  .option('--all', 'Consider ready tasks across the whole backlog')
+  .action(async (opts) => {
+    try {
+      const projectId =
+        opts.project ?? (opts.all ? undefined : resolveProject()?.id)
+      const ready = await graphql<{ readyTasks: ClaimedTask[] }>(READY_TASKS, {
+        projectId: projectId ?? null,
+      })
+      if (ready.readyTasks.length === 0) {
+        throw new Error(
+          'No ready tasks to claim (none are actionable, or all are blocked/done).',
+        )
+      }
+      // Walk the ready list and claim the first task we win. A null claimNode
+      // means a concurrent agent took that one between our read and our claim —
+      // skip to the next candidate so parallel agents each get a distinct task.
+      for (const candidate of ready.readyTasks) {
+        const data = await graphql<{ claimNode: ClaimedTask | null }>(
+          CLAIM_NODE,
+          { id: candidate.id },
+        )
+        if (data.claimNode) {
+          output(data.claimNode)
+          return
+        }
+      }
+      // Every ready candidate was claimed out from under us.
+      throw new Error(
+        'No claimable task left: every ready task was claimed by another agent. Try again.',
+      )
     } catch (error) {
       outputError(error)
     }

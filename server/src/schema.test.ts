@@ -70,7 +70,7 @@ describe('schema', () => {
     expect(fields.tree).toBeUndefined()
   })
 
-  it('Mutation type has createNode, updateNode, approveNode, deleteNode, createEdge, removeEdge', () => {
+  it('Mutation type has createNode, updateNode, approveNode, claimNode, deleteNode, createEdge, removeEdge', () => {
     const mutationType = schema.getType(
       'Mutation',
     ) as import('graphql').GraphQLObjectType
@@ -78,9 +78,22 @@ describe('schema', () => {
     expect(fields.createNode).toBeDefined()
     expect(fields.updateNode).toBeDefined()
     expect(fields.approveNode).toBeDefined()
+    expect(fields.claimNode).toBeDefined()
     expect(fields.deleteNode).toBeDefined()
     expect(fields.createEdge).toBeDefined()
     expect(fields.removeEdge).toBeDefined()
+  })
+
+  it('claimNode takes an id arg and returns a NULLABLE Node (null on lost race)', () => {
+    const mutationType = schema.getType(
+      'Mutation',
+    ) as import('graphql').GraphQLObjectType
+    const claimNode = mutationType.getFields().claimNode
+    const args = claimNode.args.map((a) => a.name)
+    expect(args).toEqual(expect.arrayContaining(['id']))
+    // Nullable on purpose: a lost race / non-claimable node returns null, not
+    // an error. So the type must be `Node`, never `Node!`.
+    expect(String(claimNode.type)).toBe('Node')
   })
 
   it('createNode accepts type, title, description, status, metadata args', () => {

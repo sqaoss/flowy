@@ -247,6 +247,47 @@ describe('CLI e2e against the bundled local server (F18)', () => {
     expect(readyAfter.map((t) => t.id)).toContain(taskId)
   })
 
+  it('task claim atomically claims a task; a second claim fails (F28)', async () => {
+    // Fresh claimable task under the active feature.
+    const fresh = await cli<{ id: string }>(
+      ['task', 'create', '--title', 'Claim me', '--description', 'grab it'],
+      { cwd: home },
+    )
+    const claimed = await cli<{ id: string; status: string }>(
+      ['task', 'claim', fresh.id],
+      { cwd: home },
+    )
+    expect(claimed.id).toBe(fresh.id)
+    expect(claimed.status).toBe('in_progress')
+
+    // A second claim on the same (now in_progress) task loses: non-zero exit
+    // and a clear message, nothing on stdout.
+    const second = await runCli(['task', 'claim', fresh.id], env({ cwd: home }))
+    expect(second.code).not.toBe(0)
+    expect(second.stdout.trim()).toBe('')
+    const err = parseError(second)
+    expect(err.error).toMatch(/already claimed|not claimable/i)
+  })
+
+  it('task next claims a ready task from the active project (F28)', async () => {
+    // Ensure at least one fresh ready task exists, then `task next` claims one.
+    const fresh = await cli<{ id: string }>(
+      ['task', 'create', '--title', 'Next me', '--description', 'pick me'],
+      { cwd: home },
+    )
+    const next = await cli<{ id: string; status: string }>(['task', 'next'], {
+      cwd: home,
+    })
+    expect(next.status).toBe('in_progress')
+
+    // The just-claimed task is now in_progress; claiming the SAME id again
+    // fails — proving `next` actually claimed (not merely listed) a task.
+    const reclaim = await runCli(['task', 'claim', next.id], env({ cwd: home }))
+    expect(reclaim.code).not.toBe(0)
+    // Sanity: the fresh task we created is a plausible candidate id shape.
+    expect(fresh.id).toMatch(/^task_/)
+  })
+
   it('tree walks part_of by default with parentId/depth/relation (F8 shape)', async () => {
     // Post-#38, `tree` follows `part_of` by default and annotates each node
     // with parentId, depth (root's direct children = 1), and the edge relation.

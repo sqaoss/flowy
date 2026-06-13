@@ -74,6 +74,7 @@ describe('commands send canonical operations (no re-inlined queries)', () => {
       'BLOCK_TASK',
       'UNBLOCK_TASK',
       'TASK_DEPS',
+      'CLAIM_NODE',
     ],
     'status.ts': ['UPDATE_STATUS'],
     'approve.ts': ['APPROVE_NODE'],
