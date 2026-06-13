@@ -19,6 +19,7 @@ import { initCommand } from './commands/init.ts'
 import { keyCommand } from './commands/key.ts'
 import { projectCommand } from './commands/project.ts'
 import { searchCommand } from './commands/search.ts'
+import { serveCommand } from './commands/serve.ts'
 import { setupCommand } from './commands/setup.ts'
 import { statusCommand } from './commands/status.ts'
 import { taskCommand } from './commands/task.ts'
@@ -32,6 +33,7 @@ const program = new Command()
 
 program.addCommand(initCommand)
 program.addCommand(setupCommand)
+program.addCommand(serveCommand)
 program.addCommand(clientCommand)
 program.addCommand(projectCommand)
 program.addCommand(featureCommand)
