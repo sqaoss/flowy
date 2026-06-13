@@ -127,6 +127,75 @@ featureCommand
   })
 
 featureCommand
+  .command('update')
+  .description('Update a feature')
+  .argument('[id]', 'Feature ID (defaults to active feature)')
+  .option('--title <title>', 'New title')
+  .option(
+    '--description <text>',
+    'New description, used verbatim (never read as a file path)',
+  )
+  .option(
+    '--description-file <path>',
+    'Read the new description from a file, or "-" for stdin',
+  )
+  .option('--metadata <json>', 'New metadata as a JSON string')
+  .action(async (id: string | undefined, opts) => {
+    try {
+      const featureId = id ?? resolveFeature()
+      if (!featureId) {
+        throw new Error(
+          'No feature specified. Pass an ID or set an active feature.',
+        )
+      }
+      const variables: Record<string, unknown> = { id: featureId }
+      if (opts.title != null) variables.title = opts.title
+      if (opts.description != null || opts.descriptionFile != null) {
+        variables.description = await resolveDescription({
+          description: opts.description,
+          descriptionFile: opts.descriptionFile,
+        })
+      }
+      if (opts.metadata != null) variables.metadata = opts.metadata
+      const data = await graphql<{ updateNode: unknown }>(
+        `mutation UpdateNode($id: String!, $title: String, $description: String, $metadata: String) {
+          updateNode(id: $id, title: $title, description: $description, metadata: $metadata) {
+            id type title description status metadata createdAt updatedAt
+          }
+        }`,
+        variables,
+      )
+      output(data.updateNode)
+    } catch (error) {
+      outputError(error)
+    }
+  })
+
+featureCommand
+  .command('delete')
+  .description('Delete a feature')
+  .argument('[id]', 'Feature ID (defaults to active feature)')
+  .action(async (id?: string) => {
+    try {
+      const featureId = id ?? resolveFeature()
+      if (!featureId) {
+        throw new Error(
+          'No feature specified. Pass an ID or set an active feature.',
+        )
+      }
+      const data = await graphql<{ deleteNode: boolean }>(
+        `mutation DeleteNode($id: String!) {
+          deleteNode(id: $id)
+        }`,
+        { id: featureId },
+      )
+      output({ deleted: data.deleteNode })
+    } catch (error) {
+      outputError(error)
+    }
+  })
+
+featureCommand
   .command('show')
   .description('Show feature details')
   .argument('[id]', 'Feature ID (defaults to active feature)')

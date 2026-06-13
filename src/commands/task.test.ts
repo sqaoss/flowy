@@ -23,10 +23,10 @@ describe('task command', () => {
     vi.clearAllMocks()
   })
 
-  test('exports a command group with 6 subcommands', async () => {
+  test('exports a command group with 8 subcommands', async () => {
     const { taskCommand } = await import('./task.ts')
     expect(taskCommand.name()).toBe('task')
-    expect(taskCommand.commands).toHaveLength(6)
+    expect(taskCommand.commands).toHaveLength(8)
 
     const names = taskCommand.commands.map((c) => c.name())
     expect(names).toContain('create')
@@ -34,6 +34,8 @@ describe('task command', () => {
     expect(names).toContain('show')
     expect(names).toContain('block')
     expect(names).toContain('unblock')
+    expect(names).toContain('update')
+    expect(names).toContain('delete')
     expect(names).toContain('deps')
   })
 
@@ -92,6 +94,167 @@ describe('task command', () => {
       expect.objectContaining({
         message: 'Node not found',
       }),
+    )
+  })
+
+  test('update sends updateNode with only the title when title-only', async () => {
+    const { graphql } = await import('../util/client.ts')
+    const { output } = await import('../util/format.ts')
+    const { taskCommand } = await import('./task.ts')
+
+    vi.mocked(graphql).mockResolvedValueOnce({
+      updateNode: { id: 'task_1', title: 'New' },
+    })
+
+    const updateCmd = taskCommand.commands.find((c) => c.name() === 'update')!
+    await updateCmd.parseAsync(['task_1', '--title', 'New'], { from: 'user' })
+
+    expect(graphql).toHaveBeenCalledWith(
+      expect.stringContaining('updateNode'),
+      { id: 'task_1', title: 'New' },
+    )
+    expect(output).toHaveBeenCalledWith({ id: 'task_1', title: 'New' })
+  })
+
+  test('update sends updateNode with only the description when description-only', async () => {
+    const { graphql } = await import('../util/client.ts')
+    const { taskCommand } = await import('./task.ts')
+
+    vi.mocked(graphql).mockResolvedValueOnce({
+      updateNode: { id: 'task_1' },
+    })
+
+    const updateCmd = taskCommand.commands.find((c) => c.name() === 'update')!
+    await updateCmd.parseAsync(['task_1', '--description', 'Body'], {
+      from: 'user',
+    })
+
+    expect(graphql).toHaveBeenCalledWith(
+      expect.stringContaining('updateNode'),
+      {
+        id: 'task_1',
+        description: 'Body',
+      },
+    )
+  })
+
+  test('update sends updateNode with only the metadata when metadata-only', async () => {
+    const { graphql } = await import('../util/client.ts')
+    const { taskCommand } = await import('./task.ts')
+
+    vi.mocked(graphql).mockResolvedValueOnce({
+      updateNode: { id: 'task_1' },
+    })
+
+    const updateCmd = taskCommand.commands.find((c) => c.name() === 'update')!
+    await updateCmd.parseAsync(['task_1', '--metadata', '{"k":"v"}'], {
+      from: 'user',
+    })
+
+    expect(graphql).toHaveBeenCalledWith(
+      expect.stringContaining('updateNode'),
+      {
+        id: 'task_1',
+        metadata: '{"k":"v"}',
+      },
+    )
+  })
+
+  test('update sends updateNode with combined fields', async () => {
+    const { graphql } = await import('../util/client.ts')
+    const { taskCommand } = await import('./task.ts')
+
+    vi.mocked(graphql).mockResolvedValueOnce({
+      updateNode: { id: 'task_1' },
+    })
+
+    const updateCmd = taskCommand.commands.find((c) => c.name() === 'update')!
+    await updateCmd.parseAsync(
+      ['task_1', '--title', 'New', '--description', 'Body', '--metadata', '{}'],
+      { from: 'user' },
+    )
+
+    expect(graphql).toHaveBeenCalledWith(
+      expect.stringContaining('updateNode'),
+      {
+        id: 'task_1',
+        title: 'New',
+        description: 'Body',
+        metadata: '{}',
+      },
+    )
+  })
+
+  test('update surfaces NOT_FOUND via outputError with its code', async () => {
+    const { graphql } = await import('../util/client.ts')
+    const { outputError } = await import('../util/format.ts')
+    const { taskCommand } = await import('./task.ts')
+
+    const notFound = Object.assign(new Error('Node task_x not found'), {
+      code: 'NOT_FOUND',
+    })
+    vi.mocked(graphql).mockRejectedValueOnce(notFound)
+
+    const updateCmd = taskCommand.commands.find((c) => c.name() === 'update')!
+    await updateCmd.parseAsync(['task_x', '--title', 'New'], { from: 'user' })
+
+    expect(outputError).toHaveBeenCalledWith(
+      expect.objectContaining({ code: 'NOT_FOUND' }),
+    )
+  })
+
+  test('delete sends deleteNode mutation', async () => {
+    const { graphql } = await import('../util/client.ts')
+    const { output } = await import('../util/format.ts')
+    const { taskCommand } = await import('./task.ts')
+
+    vi.mocked(graphql).mockResolvedValueOnce({ deleteNode: true })
+
+    const deleteCmd = taskCommand.commands.find((c) => c.name() === 'delete')!
+    await deleteCmd.parseAsync(['task_1'], { from: 'user' })
+
+    expect(graphql).toHaveBeenCalledWith(
+      expect.stringContaining('deleteNode'),
+      {
+        id: 'task_1',
+      },
+    )
+    expect(output).toHaveBeenCalledWith({ deleted: true })
+  })
+
+  test('delete surfaces CONFLICT via outputError with its code', async () => {
+    const { graphql } = await import('../util/client.ts')
+    const { outputError } = await import('../util/format.ts')
+    const { taskCommand } = await import('./task.ts')
+
+    const conflict = Object.assign(new Error('has children'), {
+      code: 'CONFLICT',
+    })
+    vi.mocked(graphql).mockRejectedValueOnce(conflict)
+
+    const deleteCmd = taskCommand.commands.find((c) => c.name() === 'delete')!
+    await deleteCmd.parseAsync(['task_1'], { from: 'user' })
+
+    expect(outputError).toHaveBeenCalledWith(
+      expect.objectContaining({ code: 'CONFLICT' }),
+    )
+  })
+
+  test('delete surfaces NOT_FOUND via outputError with its code', async () => {
+    const { graphql } = await import('../util/client.ts')
+    const { outputError } = await import('../util/format.ts')
+    const { taskCommand } = await import('./task.ts')
+
+    const notFound = Object.assign(new Error('Node task_x not found'), {
+      code: 'NOT_FOUND',
+    })
+    vi.mocked(graphql).mockRejectedValueOnce(notFound)
+
+    const deleteCmd = taskCommand.commands.find((c) => c.name() === 'delete')!
+    await deleteCmd.parseAsync(['task_x'], { from: 'user' })
+
+    expect(outputError).toHaveBeenCalledWith(
+      expect.objectContaining({ code: 'NOT_FOUND' }),
     )
   })
 
