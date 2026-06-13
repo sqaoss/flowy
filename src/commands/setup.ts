@@ -1,6 +1,6 @@
 import { spawnSync } from 'node:child_process'
 import { Command, Option } from 'commander'
-import { loadConfig, saveConfig } from '../util/config.ts'
+import { fingerprintKey, loadConfig, saveConfig } from '../util/config.ts'
 import { output, outputError } from '../util/format.ts'
 import { pinnedInstallSpec } from './serve.ts'
 
@@ -69,6 +69,10 @@ setupCommand
   .command('remote')
   .description('Connect to the hosted Flowy service')
   .option('--email <email>', 'Email address for registration')
+  .option(
+    '--show-key',
+    'Print the full API key instead of a non-reversible fingerprint',
+  )
   .addOption(
     new Option(
       '--tier <tier>',
@@ -116,7 +120,13 @@ setupCommand
 
       installSkill()
 
-      output(data.register)
+      const { user, apiKey, checkoutUrl } = data.register
+      // Default output never leaks the secret; --show-key opts in (F35).
+      output(
+        opts.showKey
+          ? { user, apiKey, checkoutUrl }
+          : { user, keyFingerprint: fingerprintKey(apiKey), checkoutUrl },
+      )
     } catch (error) {
       outputError(error)
     }
