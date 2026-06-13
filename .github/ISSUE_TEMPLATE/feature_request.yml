@@ -1,0 +1,45 @@
+name: Feature request
+description: Suggest a new command, flag, or capability
+title: '[feature]: '
+labels: ['enhancement']
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the idea! Flowy is built for AI coding agents — the more
+        concrete the workflow, the easier it is to evaluate.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      description: The friction or gap you hit today, from an agent's or operator's point of view.
+      placeholder: When an agent finishes a feature, there's no way to ...
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: The command, flag, or behavior you'd like. Sketch the CLI surface if you can.
+      placeholder: |
+        flowy feature close <id>   # marks all child tasks done and the feature done
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Other ways to get the same outcome, and why they fall short.
+    validations:
+      required: false
+  - type: dropdown
+    id: mode
+    attributes:
+      label: Which mode does this affect?
+      options:
+        - Both
+        - Self-hosted only
+        - Remote (hosted) only
+        - Not sure
+    validations:
+      required: false
