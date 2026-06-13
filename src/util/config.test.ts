@@ -1,5 +1,12 @@
-import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { homedir } from 'node:os'
+import {
+  chmodSync,
+  existsSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs'
+import { homedir, platform } from 'node:os'
 import { resolve } from 'node:path'
 import {
   afterAll,
@@ -11,6 +18,8 @@ import {
   test,
   vi,
 } from 'vitest'
+
+const isWindows = platform() === 'win32'
 
 const CONFIG_PATH = resolve(homedir(), '.config', 'flowy', 'config.json')
 
@@ -68,6 +77,45 @@ describe('config', () => {
     saveConfig(config)
     const reloaded = loadConfig()
     expect(reloaded.client.name).toBe('Test Client')
+  })
+
+  test.skipIf(isWindows)(
+    'saveConfig writes config with 0600 mode',
+    async () => {
+      const { saveConfig, loadConfig } = await import('./config.ts')
+      saveConfig(loadConfig())
+      const mode = statSync(CONFIG_PATH).mode & 0o777
+      expect(mode).toBe(0o600)
+    },
+  )
+
+  test.skipIf(isWindows)(
+    'saveConfig corrects a pre-existing 0644 config to 0600',
+    async () => {
+      const { saveConfig, loadConfig } = await import('./config.ts')
+      // Simulate a config written by an older CLI (world-readable).
+      writeFileSync(CONFIG_PATH, JSON.stringify(loadConfig(), null, 2))
+      chmodSync(CONFIG_PATH, 0o644)
+      expect(statSync(CONFIG_PATH).mode & 0o777).toBe(0o644)
+
+      saveConfig(loadConfig())
+      expect(statSync(CONFIG_PATH).mode & 0o777).toBe(0o600)
+    },
+  )
+
+  test('fingerprintKey is deterministic and non-reversible', async () => {
+    const { fingerprintKey } = await import('./config.ts')
+    const key = 'flowy_secret_abcdef0123456789'
+    const fp = fingerprintKey(key)
+    expect(fingerprintKey(key)).toBe(fp)
+    expect(fp).not.toContain(key)
+    expect(fp).not.toContain('abcdef0123456789')
+    expect(fp).toMatch(/sha256:[0-9a-f]{12}/)
+  })
+
+  test('fingerprintKey returns a placeholder for an empty key', async () => {
+    const { fingerprintKey } = await import('./config.ts')
+    expect(fingerprintKey('')).toBe('(none)')
   })
 
   test('resolveProject returns null when no project configured', async () => {

@@ -1,9 +1,33 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { homedir } from 'node:os'
+import { createHash } from 'node:crypto'
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  writeFileSync,
+} from 'node:fs'
+import { homedir, platform } from 'node:os'
 import { resolve } from 'node:path'
 
 const CONFIG_DIR = resolve(homedir(), '.config', 'flowy')
 const CONFIG_PATH = resolve(CONFIG_DIR, 'config.json')
+
+// Owner-only modes for the config dir/file, which hold the FLOWY_API_KEY.
+// POSIX-only; chmod is a no-op on Windows so we skip it to avoid surprises.
+const DIR_MODE = 0o700
+const FILE_MODE = 0o600
+const isWindows = platform() === 'win32'
+
+/**
+ * Non-reversible fingerprint of an API key, safe to print to stdout/logs.
+ * A short SHA-256 prefix lets a human confirm *which* key is configured
+ * without exposing the secret itself (F35).
+ */
+export function fingerprintKey(apiKey: string): string {
+  if (!apiKey) return '(none)'
+  const digest = createHash('sha256').update(apiKey).digest('hex')
+  return `sha256:${digest.slice(0, 12)}`
+}
 
 export function loadConfig() {
   if (!existsSync(CONFIG_PATH)) {
@@ -19,8 +43,17 @@ export function loadConfig() {
 }
 
 export function saveConfig(config: ReturnType<typeof loadConfig>): void {
-  mkdirSync(CONFIG_DIR, { recursive: true })
-  writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2))
+  mkdirSync(CONFIG_DIR, { recursive: true, mode: DIR_MODE })
+  // `mode` on writeFileSync only applies to *newly created* files and is
+  // masked by umask, so an explicit chmod afterward both corrects a
+  // pre-existing world-readable (0644) config and survives a tight umask.
+  writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2), {
+    mode: FILE_MODE,
+  })
+  if (!isWindows) {
+    chmodSync(CONFIG_DIR, DIR_MODE)
+    chmodSync(CONFIG_PATH, FILE_MODE)
+  }
 }
 
 export interface ProjectConfig {

@@ -17,10 +17,17 @@ beforeEach(() => {
   mockOutput = vi.fn()
   mockOutputError = vi.fn()
 
-  vi.doMock('../util/config.ts', () => ({
-    loadConfig: mockLoadConfig,
-    saveConfig: mockSaveConfig,
-  }))
+  vi.doMock('../util/config.ts', async () => {
+    const actual =
+      await vi.importActual<typeof import('../util/config.ts')>(
+        '../util/config.ts',
+      )
+    return {
+      loadConfig: mockLoadConfig,
+      saveConfig: mockSaveConfig,
+      fingerprintKey: actual.fingerprintKey,
+    }
+  })
 
   vi.doMock('../util/format.ts', () => ({
     output: mockOutput,
@@ -46,7 +53,7 @@ describe('key command', () => {
     expect(keyCommand.commands).toHaveLength(1)
   })
 
-  test('rotate calls rotateApiKey mutation, saves new key to config, and outputs result', async () => {
+  test('rotate calls rotateApiKey mutation, saves new key to config, and outputs a fingerprint (not the secret)', async () => {
     const mockGraphql = vi.fn().mockResolvedValue({
       rotateApiKey: {
         user: {
@@ -74,11 +81,42 @@ describe('key command', () => {
         apiKey: 'flowy_new_key_456',
       }),
     )
-    expect(mockOutput).toHaveBeenCalledWith(
+
+    // Default output must NOT leak the full secret.
+    const outputArg = mockOutput.mock.calls[0]![0]
+    expect(JSON.stringify(outputArg)).not.toContain('flowy_new_key_456')
+    expect(outputArg).toEqual(
       expect.objectContaining({
         user: expect.objectContaining({ email: 'test@example.com' }),
-        apiKey: 'flowy_new_key_456',
+        keyFingerprint: expect.stringMatching(/sha256:[0-9a-f]{12}/),
       }),
+    )
+    expect(outputArg).not.toHaveProperty('apiKey')
+  })
+
+  test('rotate --show-key reveals the full secret', async () => {
+    const mockGraphql = vi.fn().mockResolvedValue({
+      rotateApiKey: {
+        user: {
+          id: 'user_1',
+          email: 'test@example.com',
+          tier: 'free',
+          createdAt: '2025-01-01T00:00:00Z',
+          graceEndsAt: null,
+        },
+        apiKey: 'flowy_new_key_456',
+      },
+    })
+    vi.doMock('../util/client.ts', () => ({
+      graphql: mockGraphql,
+    }))
+
+    const { keyCommand } = await import('./key.ts')
+    await keyCommand.parseAsync(['rotate', '--show-key'], { from: 'user' })
+
+    const outputArg = mockOutput.mock.calls[0]![0]
+    expect(outputArg).toEqual(
+      expect.objectContaining({ apiKey: 'flowy_new_key_456' }),
     )
   })
 
