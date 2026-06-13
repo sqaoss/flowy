@@ -31,6 +31,14 @@ describe('task command', () => {
     expect(names).toContain('unblock')
   })
 
+  test('create exposes both --description and --description-file options', async () => {
+    const { taskCommand } = await import('./task.ts')
+    const createCmd = taskCommand.commands.find((c) => c.name() === 'create')!
+    const optionFlags = createCmd.options.map((o) => o.long)
+    expect(optionFlags).toContain('--description')
+    expect(optionFlags).toContain('--description-file')
+  })
+
   test('create calls outputError when no active feature', async () => {
     const { taskCommand } = await import('./task.ts')
     const { outputError } = await import('../util/format.ts')

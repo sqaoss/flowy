@@ -45,4 +45,69 @@ describe('outputError', () => {
 
     expect(exitSpy).toHaveBeenCalledWith(1)
   })
+
+  test('exits 1 for VALIDATION_ERROR (usage/validation class)', () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    const exitSpy = vi
+      .spyOn(process, 'exit')
+      .mockImplementation(() => undefined as never)
+
+    outputError(
+      Object.assign(new Error('bad input'), { code: 'VALIDATION_ERROR' }),
+    )
+
+    expect(exitSpy).toHaveBeenCalledWith(1)
+  })
+
+  test('exits 1 for CONFLICT (usage/validation class)', () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    const exitSpy = vi
+      .spyOn(process, 'exit')
+      .mockImplementation(() => undefined as never)
+
+    outputError(Object.assign(new Error('conflict'), { code: 'CONFLICT' }))
+
+    expect(exitSpy).toHaveBeenCalledWith(1)
+  })
+
+  test('exits 2 for NOT_FOUND', () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    const exitSpy = vi
+      .spyOn(process, 'exit')
+      .mockImplementation(() => undefined as never)
+
+    outputError(
+      Object.assign(new Error('Node bad-id not found'), { code: 'NOT_FOUND' }),
+    )
+
+    expect(exitSpy).toHaveBeenCalledWith(2)
+  })
+
+  test('exits 3 for SERVER_ERROR', () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    const exitSpy = vi
+      .spyOn(process, 'exit')
+      .mockImplementation(() => undefined as never)
+
+    outputError(
+      Object.assign(new Error('Server returned HTTP 502'), {
+        code: 'SERVER_ERROR',
+      }),
+    )
+
+    expect(exitSpy).toHaveBeenCalledWith(3)
+  })
+
+  test('exits 4 for NETWORK_ERROR', () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    const exitSpy = vi
+      .spyOn(process, 'exit')
+      .mockImplementation(() => undefined as never)
+
+    outputError(
+      Object.assign(new Error('Request timed out'), { code: 'NETWORK_ERROR' }),
+    )
+
+    expect(exitSpy).toHaveBeenCalledWith(4)
+  })
 })

@@ -165,9 +165,17 @@ describe('createResolvers', () => {
       })
     })
 
-    it('returns null for non-existent id', () => {
-      const found = resolvers.Query.node(null, { id: 'nonexistent' })
-      expect(found).toBeNull()
+    it('throws NOT_FOUND for a non-existent id (no silent null)', () => {
+      expect(() => resolvers.Query.node(null, { id: 'nonexistent' })).toThrow(
+        'Node nonexistent not found',
+      )
+      try {
+        resolvers.Query.node(null, { id: 'nonexistent' })
+      } catch (error) {
+        expect(
+          (error as { extensions?: { code?: string } }).extensions?.code,
+        ).toBe('NOT_FOUND')
+      }
     })
   })
 
@@ -321,7 +329,10 @@ describe('createResolvers', () => {
       const node = create(resolvers, { type: 'task', title: 'Leaf' })
       const result = resolvers.Mutation.deleteNode(null, { id: node.id })
       expect(result).toBe(true)
-      expect(resolvers.Query.node(null, { id: node.id })).toBeNull()
+      // After deletion the node is gone: Query.node now fails loud (NOT_FOUND).
+      expect(() => resolvers.Query.node(null, { id: node.id })).toThrow(
+        `Node ${node.id} not found`,
+      )
     })
 
     it('removes incident blocks edges when deleting a leaf', () => {

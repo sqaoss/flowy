@@ -75,6 +75,37 @@ describe('server error masking', () => {
     expect(error.extensions?.code).toBe('VALIDATION_ERROR')
   })
 
+  it('surfaces a not-found node query with real message and NOT_FOUND code (no silent null)', async () => {
+    instance = createServer({ dbPath: ':memory:', port: 0 })
+
+    const json = await gql('query ($id: String!) { node(id: $id) { id } }', {
+      id: 'task_nonexistent',
+    })
+
+    expect(json.errors).toBeDefined()
+    const error = json.errors![0]
+    expect(error.message).toBe('Node task_nonexistent not found')
+    expect(error.extensions?.code).toBe('NOT_FOUND')
+    const data = json.data as { node: unknown } | null | undefined
+    expect(data?.node ?? null).toBeNull()
+  })
+
+  it('still returns a node when it exists', async () => {
+    instance = createServer({ dbPath: ':memory:', port: 0 })
+
+    const created = (await gql(
+      'mutation { createNode(type: "task", title: "T") { id } }',
+    )) as { data: { createNode: { id: string } } }
+    const id = created.data.createNode.id
+
+    const json = (await gql('query ($id: String!) { node(id: $id) { id } }', {
+      id,
+    })) as { data: { node: { id: string } }; errors?: unknown[] }
+
+    expect(json.errors).toBeUndefined()
+    expect(json.data.node.id).toBe(id)
+  })
+
   it('surfaces an approve-wrong-status error with CONFLICT code', async () => {
     instance = createServer({ dbPath: ':memory:', port: 0 })
 
@@ -168,13 +199,12 @@ describe('server error masking', () => {
     })) as { data: { deleteNode: boolean } }
     expect(del.data.deleteNode).toBe(true)
 
-    const fetched = (await gql(
-      'query ($id: String!) { node(id: $id) { id } }',
-      {
-        id,
-      },
-    )) as { data: { node: unknown } }
-    expect(fetched.data.node).toBeNull()
+    const fetched = await gql('query ($id: String!) { node(id: $id) { id } }', {
+      id,
+    })
+    // The node is gone: querying it now fails loud with NOT_FOUND.
+    expect(fetched.errors).toBeDefined()
+    expect(fetched.errors![0].extensions?.code).toBe('NOT_FOUND')
   })
 
   it('refuses to delete a parent with children (CONFLICT)', async () => {
