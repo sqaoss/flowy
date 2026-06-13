@@ -118,6 +118,63 @@ async function upsertNode(
   return data.createNode.id
 }
 
+/** The result of materializing a manifest: counts + the key→server-id map. */
+export interface ImportResult {
+  imported: number
+  edges: number
+  map: Record<string, string>
+}
+
+/**
+ * Materialize a validated manifest against the configured backend, idempotently
+ * by client-key. Shared by the `import` CLI command and the `flowy_import` MCP
+ * tool so both surfaces ingest identically. Reuses the canonical IMPORT_*
+ * operations — no inlined queries.
+ */
+export async function materializeManifest(
+  manifest: Manifest,
+): Promise<ImportResult> {
+  const existing = await loadExisting()
+
+  // Pass 1 — upsert every node, stamping its client-key into metadata.
+  // Known keys update, new keys create, so a re-import never duplicates.
+  const idByKey = new Map<string, string>()
+  for (const node of manifest.nodes) {
+    idByKey.set(node.key, await upsertNode(node, existing.get(node.key)))
+  }
+
+  // Dedup against edges that already exist server-side. Only nodes that
+  // pre-existed this import can already have edges, so query just those.
+  const preExistingIds = manifest.nodes
+    .filter((n) => existing.has(n.key))
+    .map((n) => idByKey.get(n.key))
+    .filter((id): id is string => id != null)
+  const present = await loadExistingEdges(preExistingIds)
+
+  // Pass 2 — materialize edges, deduped by (source,target,relation). Skip
+  // any edge that already exists so the non-idempotent createEdge is never
+  // asked to re-link.
+  let edgeCount = 0
+  for (const edge of desiredEdges(manifest)) {
+    const sourceId = idByKey.get(edge.sourceKey)
+    const targetId = idByKey.get(edge.targetKey)
+    if (!sourceId || !targetId) continue
+    if (present.has(edgeKey(sourceId, targetId, edge.relation))) continue
+    await graphql(IMPORT_EDGE, {
+      sourceId,
+      targetId,
+      relation: edge.relation,
+    })
+    edgeCount++
+  }
+
+  return {
+    imported: idByKey.size,
+    edges: edgeCount,
+    map: Object.fromEntries(idByKey),
+  }
+}
+
 export const importCommand = new Command('import')
   .description(
     'Ingest a manifest of projects/features/tasks + edges (idempotent by client-key)',
@@ -126,45 +183,7 @@ export const importCommand = new Command('import')
   .action(async (manifestPath: string) => {
     try {
       const manifest = parseManifest(readFileSync(manifestPath, 'utf-8'))
-      const existing = await loadExisting()
-
-      // Pass 1 — upsert every node, stamping its client-key into metadata.
-      // Known keys update, new keys create, so a re-import never duplicates.
-      const idByKey = new Map<string, string>()
-      for (const node of manifest.nodes) {
-        idByKey.set(node.key, await upsertNode(node, existing.get(node.key)))
-      }
-
-      // Dedup against edges that already exist server-side. Only nodes that
-      // pre-existed this import can already have edges, so query just those.
-      const preExistingIds = manifest.nodes
-        .filter((n) => existing.has(n.key))
-        .map((n) => idByKey.get(n.key))
-        .filter((id): id is string => id != null)
-      const present = await loadExistingEdges(preExistingIds)
-
-      // Pass 2 — materialize edges, deduped by (source,target,relation). Skip
-      // any edge that already exists so the non-idempotent createEdge is never
-      // asked to re-link.
-      let edgeCount = 0
-      for (const edge of desiredEdges(manifest)) {
-        const sourceId = idByKey.get(edge.sourceKey)
-        const targetId = idByKey.get(edge.targetKey)
-        if (!sourceId || !targetId) continue
-        if (present.has(edgeKey(sourceId, targetId, edge.relation))) continue
-        await graphql(IMPORT_EDGE, {
-          sourceId,
-          targetId,
-          relation: edge.relation,
-        })
-        edgeCount++
-      }
-
-      output({
-        imported: idByKey.size,
-        edges: edgeCount,
-        map: Object.fromEntries(idByKey),
-      })
+      output(await materializeManifest(manifest))
     } catch (error) {
       outputError(error)
     }

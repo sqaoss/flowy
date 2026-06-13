@@ -153,6 +153,33 @@ npx skills add sqaoss/flowy
 
 See [skills/using-flowy/SKILL.md](skills/using-flowy/SKILL.md) for the full skill reference.
 
+## MCP Server
+
+`flowy mcp` exposes the whole backlog API as an [MCP](https://modelcontextprotocol.io) server over **stdio** — a second agent surface alongside the CLI. An MCP-aware client (Claude Code, Claude Desktop, etc.) spawns it and gets typed tools for the full workflow: create/update/delete/show/list for projects, features and tasks, `flowy_ready_tasks`, `flowy_claim_task`, `flowy_next_task` (atomically claim the next ready task — the one call an agent needs to pick up work), `flowy_block`/`flowy_unblock`, `flowy_set_status`, `flowy_approve`, `flowy_search`, `flowy_tree`, `flowy_task_deps`, `flowy_history`, `flowy_import`/`flowy_export`, and `flowy_whoami`.
+
+It is **mode-aware**: it reads the same `~/.config/flowy/config.json` as the CLI, so it talks to whichever backend you've configured — the local `flowy serve` server (no account) or the hosted service. There is nothing extra to configure.
+
+Register it with an MCP client by pointing the client at the `flowy mcp` command. For Claude Code:
+
+```bash
+claude mcp add flowy -- flowy mcp
+```
+
+Or add it to a client config (e.g. Claude Desktop's `claude_desktop_config.json`):
+
+```json
+{
+  "mcpServers": {
+    "flowy": {
+      "command": "flowy",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+Configure the backend first (`flowy setup local` + `flowy serve`, or `flowy setup remote`) so the MCP server knows where to talk. Tool errors carry the same coded classes as the CLI (`NOT_FOUND`, `VALIDATION_ERROR`, …) so an agent can read and self-correct.
+
 ## Data Model
 
 ```
@@ -191,6 +218,7 @@ The canonical status flow is `draft → pending_review → approved → in_progr
 | `setup local` | Install the bundled local server and point the CLI at it |
 | `setup remote --email <email> [--tier <tier>]` | Register with the hosted server (`--tier` optional) |
 | `serve [--port] [--host] [--db]` | Run the bundled local server (self-hosted mode) |
+| `mcp` | Run the MCP server over stdio — a second agent surface (mode-aware) |
 | `init` | Auto-detect repo and create/map project |
 | `client set name <name>` | Set client display name |
 | `project create <name>` | Create project |

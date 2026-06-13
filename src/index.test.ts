@@ -55,6 +55,9 @@ vi.mock('./commands/backup.ts', () => ({
   backupCommand: { name: () => 'backup' },
   restoreCommand: { name: () => 'restore' },
 }))
+vi.mock('./commands/mcp.ts', () => ({
+  mcpCommand: { name: () => 'mcp' },
+}))
 
 describe('index.ts command registration', () => {
   test('registers billing and key commands', async () => {
@@ -129,5 +132,18 @@ describe('index.ts command registration', () => {
     )
     expect(indexSource).toContain('program.addCommand(backupCommand)')
     expect(indexSource).toContain('program.addCommand(restoreCommand)')
+  })
+
+  test('registers the mcp command', async () => {
+    const { readFileSync } = await import('node:fs')
+    const indexSource = readFileSync(
+      new URL('./index.ts', import.meta.url).pathname,
+      'utf-8',
+    )
+
+    expect(indexSource).toContain(
+      "import { mcpCommand } from './commands/mcp.ts'",
+    )
+    expect(indexSource).toContain('program.addCommand(mcpCommand)')
   })
 })
