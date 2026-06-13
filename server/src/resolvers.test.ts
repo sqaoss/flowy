@@ -1099,4 +1099,200 @@ describe('createResolvers', () => {
       expect(results).toEqual([])
     })
   })
+
+  describe('Query.readyTasks', () => {
+    function setStatus(id: string, status: string): void {
+      resolvers.Mutation.updateNode(null, { id, status })
+    }
+    function block(blockerId: string, blockedId: string): void {
+      resolvers.Mutation.createEdge(null, {
+        sourceId: blockerId,
+        targetId: blockedId,
+        relation: 'blocks',
+      })
+    }
+
+    it('returns an unblocked, not-done task', () => {
+      const t = create(resolvers, { type: 'task', title: 'Free' })
+      const ready = resolvers.Query.readyTasks(null, {})
+      expect(ready.map((n) => n.id)).toEqual([t.id])
+    })
+
+    it('excludes done and cancelled tasks', () => {
+      const open = create(resolvers, { type: 'task', title: 'Open' })
+      const done = create(resolvers, { type: 'task', title: 'Done' })
+      const cancelled = create(resolvers, { type: 'task', title: 'Cancelled' })
+      setStatus(done.id, 'done')
+      setStatus(cancelled.id, 'cancelled')
+
+      const ready = resolvers.Query.readyTasks(null, {})
+      const ids = ready.map((n) => n.id)
+      expect(ids).toContain(open.id)
+      expect(ids).not.toContain(done.id)
+      expect(ids).not.toContain(cancelled.id)
+    })
+
+    it('excludes a task blocked by an unfinished blocker', () => {
+      const blocker = create(resolvers, { type: 'task', title: 'Blocker' })
+      const blocked = create(resolvers, { type: 'task', title: 'Blocked' })
+      block(blocker.id, blocked.id)
+
+      const ready = resolvers.Query.readyTasks(null, {})
+      const ids = ready.map((n) => n.id)
+      expect(ids).toContain(blocker.id)
+      expect(ids).not.toContain(blocked.id)
+    })
+
+    it('includes a task once all its blockers are done', () => {
+      const blocker = create(resolvers, { type: 'task', title: 'Blocker' })
+      const blocked = create(resolvers, { type: 'task', title: 'Blocked' })
+      block(blocker.id, blocked.id)
+      setStatus(blocker.id, 'done')
+
+      const ready = resolvers.Query.readyTasks(null, {})
+      const ids = ready.map((n) => n.id)
+      // The done blocker is itself excluded; the formerly-blocked task is ready.
+      expect(ids).not.toContain(blocker.id)
+      expect(ids).toContain(blocked.id)
+    })
+
+    it('treats a cancelled blocker as no longer blocking', () => {
+      const blocker = create(resolvers, { type: 'task', title: 'Blocker' })
+      const blocked = create(resolvers, { type: 'task', title: 'Blocked' })
+      block(blocker.id, blocked.id)
+      setStatus(blocker.id, 'cancelled')
+
+      const ready = resolvers.Query.readyTasks(null, {})
+      expect(ready.map((n) => n.id)).toContain(blocked.id)
+    })
+
+    it('still blocks when any one of several blockers is unfinished', () => {
+      const b1 = create(resolvers, { type: 'task', title: 'B1' })
+      const b2 = create(resolvers, { type: 'task', title: 'B2' })
+      const blocked = create(resolvers, { type: 'task', title: 'Blocked' })
+      block(b1.id, blocked.id)
+      block(b2.id, blocked.id)
+      setStatus(b1.id, 'done')
+      // b2 still open -> blocked stays not-ready
+
+      const ready = resolvers.Query.readyTasks(null, {})
+      expect(ready.map((n) => n.id)).not.toContain(blocked.id)
+    })
+
+    it('returns only tasks, never features or projects', () => {
+      const project = create(resolvers, { type: 'project', title: 'P' })
+      const feature = create(resolvers, { type: 'feature', title: 'F' })
+      const task = create(resolvers, { type: 'task', title: 'T' })
+
+      const ready = resolvers.Query.readyTasks(null, {})
+      const ids = ready.map((n) => n.id)
+      expect(ids).toContain(task.id)
+      expect(ids).not.toContain(project.id)
+      expect(ids).not.toContain(feature.id)
+    })
+
+    it('returns exactly the unblocked not-done tasks across a mixed fixture', () => {
+      // free: ready. blocked-by-open: not ready. blocked-by-done: ready.
+      // done: not ready. in_progress + unblocked: ready.
+      const free = create(resolvers, { type: 'task', title: 'free' })
+      const openBlocker = create(resolvers, { type: 'task', title: 'open-b' })
+      const blockedByOpen = create(resolvers, { type: 'task', title: 'bbo' })
+      const doneBlocker = create(resolvers, { type: 'task', title: 'done-b' })
+      const blockedByDone = create(resolvers, { type: 'task', title: 'bbd' })
+      const finished = create(resolvers, { type: 'task', title: 'finished' })
+      const started = create(resolvers, { type: 'task', title: 'started' })
+
+      block(openBlocker.id, blockedByOpen.id)
+      block(doneBlocker.id, blockedByDone.id)
+      setStatus(doneBlocker.id, 'done')
+      setStatus(finished.id, 'done')
+      setStatus(started.id, 'in_progress')
+
+      const ready = resolvers.Query.readyTasks(null, {})
+      const ids = new Set(ready.map((n) => n.id))
+      expect(ids).toEqual(
+        new Set([free.id, openBlocker.id, blockedByDone.id, started.id]),
+      )
+    })
+
+    it('scopes to a project via part_of when projectId is given', () => {
+      const projA = create(resolvers, { type: 'project', title: 'A' })
+      const featA = create(resolvers, { type: 'feature', title: 'FA' })
+      const taskA = create(resolvers, { type: 'task', title: 'TA' })
+      resolvers.Mutation.createEdge(null, {
+        sourceId: featA.id,
+        targetId: projA.id,
+        relation: 'part_of',
+      })
+      resolvers.Mutation.createEdge(null, {
+        sourceId: taskA.id,
+        targetId: featA.id,
+        relation: 'part_of',
+      })
+
+      const projB = create(resolvers, { type: 'project', title: 'B' })
+      const featB = create(resolvers, { type: 'feature', title: 'FB' })
+      const taskB = create(resolvers, { type: 'task', title: 'TB' })
+      resolvers.Mutation.createEdge(null, {
+        sourceId: featB.id,
+        targetId: projB.id,
+        relation: 'part_of',
+      })
+      resolvers.Mutation.createEdge(null, {
+        sourceId: taskB.id,
+        targetId: featB.id,
+        relation: 'part_of',
+      })
+
+      const ready = resolvers.Query.readyTasks(null, { projectId: projA.id })
+      expect(ready.map((n) => n.id)).toEqual([taskA.id])
+    })
+  })
+
+  describe('Query.edges', () => {
+    function block(blockerId: string, blockedId: string): void {
+      resolvers.Mutation.createEdge(null, {
+        sourceId: blockerId,
+        targetId: blockedId,
+        relation: 'blocks',
+      })
+    }
+
+    it('returns blockedBy: incoming blocks edges (sources that block the node)', () => {
+      const blocker = create(resolvers, { type: 'task', title: 'Blocker' })
+      const blocked = create(resolvers, { type: 'task', title: 'Blocked' })
+      block(blocker.id, blocked.id)
+
+      const blockedBy = resolvers.Query.edges(null, {
+        nodeId: blocked.id,
+        relation: 'blocks',
+        direction: 'incoming',
+      })
+      expect(blockedBy.map((n) => n.id)).toEqual([blocker.id])
+    })
+
+    it('returns blocks: outgoing blocks edges (targets the node blocks)', () => {
+      const blocker = create(resolvers, { type: 'task', title: 'Blocker' })
+      const blocked = create(resolvers, { type: 'task', title: 'Blocked' })
+      block(blocker.id, blocked.id)
+
+      const blocks = resolvers.Query.edges(null, {
+        nodeId: blocker.id,
+        relation: 'blocks',
+        direction: 'outgoing',
+      })
+      expect(blocks.map((n) => n.id)).toEqual([blocked.id])
+    })
+
+    it('returns an empty array for a node with no edges', () => {
+      const lonely = create(resolvers, { type: 'task', title: 'Lonely' })
+      expect(
+        resolvers.Query.edges(null, {
+          nodeId: lonely.id,
+          relation: 'blocks',
+          direction: 'incoming',
+        }),
+      ).toEqual([])
+    })
+  })
 })

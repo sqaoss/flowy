@@ -24,6 +24,8 @@ export const typeDefs = /* GraphQL */ `
     nodes(type: String): [Node!]!
     descendants(nodeId: String!, relation: String, maxDepth: Int): [Node!]!
     subtree(nodeId: String!, maxDepth: Int): [Node!]!
+    edges(nodeId: String!, relation: String!, direction: String): [Node!]!
+    readyTasks(projectId: String): [Node!]!
     search(query: String!, type: String, status: String, limit: Int): [Node!]!
   }
 
