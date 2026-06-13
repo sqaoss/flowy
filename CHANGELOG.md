@@ -1,3 +1,10 @@
+# [1.15.0](https://github.com/sqaoss/flowy/compare/v1.14.0...v1.15.0) (2026-06-13)
+
+
+### Features
+
+* MCP server — flowy mcp (P2-11/F23) ([#49](https://github.com/sqaoss/flowy/issues/49)) ([5994e43](https://github.com/sqaoss/flowy/commit/5994e43d8b954c7f489b913f9012f02eac37497a))
+
 # [1.14.0](https://github.com/sqaoss/flowy/compare/v1.13.1...v1.14.0) (2026-06-13)
 
 
