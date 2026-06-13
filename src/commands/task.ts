@@ -94,6 +94,63 @@ taskCommand
   })
 
 taskCommand
+  .command('update')
+  .description('Update a task')
+  .argument('<id>', 'Task ID')
+  .option('--title <title>', 'New title')
+  .option(
+    '--description <text>',
+    'New description, used verbatim (never read as a file path)',
+  )
+  .option(
+    '--description-file <path>',
+    'Read the new description from a file, or "-" for stdin',
+  )
+  .option('--metadata <json>', 'New metadata as a JSON string')
+  .action(async (id: string, opts) => {
+    try {
+      const variables: Record<string, unknown> = { id }
+      if (opts.title != null) variables.title = opts.title
+      if (opts.description != null || opts.descriptionFile != null) {
+        variables.description = await resolveDescription({
+          description: opts.description,
+          descriptionFile: opts.descriptionFile,
+        })
+      }
+      if (opts.metadata != null) variables.metadata = opts.metadata
+      const data = await graphql<{ updateNode: unknown }>(
+        `mutation UpdateNode($id: String!, $title: String, $description: String, $metadata: String) {
+          updateNode(id: $id, title: $title, description: $description, metadata: $metadata) {
+            id type title description status metadata createdAt updatedAt
+          }
+        }`,
+        variables,
+      )
+      output(data.updateNode)
+    } catch (error) {
+      outputError(error)
+    }
+  })
+
+taskCommand
+  .command('delete')
+  .description('Delete a task')
+  .argument('<id>', 'Task ID')
+  .action(async (id: string) => {
+    try {
+      const data = await graphql<{ deleteNode: boolean }>(
+        `mutation DeleteNode($id: String!) {
+          deleteNode(id: $id)
+        }`,
+        { id },
+      )
+      output({ deleted: data.deleteNode })
+    } catch (error) {
+      outputError(error)
+    }
+  })
+
+taskCommand
   .command('block')
   .description('Mark a task as blocking another')
   .argument('<id1>', 'Blocking task ID')
