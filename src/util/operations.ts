@@ -152,17 +152,41 @@ export const CREATE_PROJECT = `mutation CreateProject($type: String!, $title: St
   }
 }`
 
-/** feature.ts `create` — create a node with a description. */
-export const CREATE_NODE = `mutation CreateNode($type: String!, $title: String!, $description: String) {
-  createNode(type: $type, title: $title, description: $description) {
+/**
+ * feature.ts `create` — create a feature node linked under its parent project
+ * in ONE transactional call (F24). The optional `parentId` makes the server
+ * create the node and the `part_of` edge atomically, so a failed link can never
+ * orphan the node. Both backends accept `parentId` (bundled local since P1-4;
+ * SaaS since flowy-ai v33). When omitted, it is a plain create.
+ */
+export const CREATE_NODE = `mutation CreateNode($type: String!, $title: String!, $description: String, $parentId: String) {
+  createNode(type: $type, title: $title, description: $description, parentId: $parentId) {
     id type title description status createdAt updatedAt
   }
 }`
 
-/** task.ts `create` — create a task node. */
-export const CREATE_TASK = `mutation CreateTask($type: String!, $title: String!, $description: String) {
-  createNode(type: $type, title: $title, description: $description) {
+/**
+ * task.ts `create` — create a task node linked under its parent feature in ONE
+ * transactional call (F24); see CREATE_NODE for the `parentId` semantics.
+ */
+export const CREATE_TASK = `mutation CreateTask($type: String!, $title: String!, $description: String, $parentId: String) {
+  createNode(type: $type, title: $title, description: $description, parentId: $parentId) {
     id type title description status createdAt
+  }
+}`
+
+/**
+ * Contract op (P1-4/F24): create a node AND its `part_of` edge to a parent in a
+ * single atomic `createNode(parentId:)` call. This is the operation `task
+ * create` / `feature create` issue at runtime (via CREATE_TASK / CREATE_NODE);
+ * exercised explicitly by the contract test to assert the bundled local server
+ * creates the node + edge atomically and rejects a non-existent parent without
+ * leaving an orphan. The SaaS contract guard mirrors this op so both backends
+ * stay aligned on the parented-create surface.
+ */
+export const CREATE_NODE_WITH_PARENT = `mutation CreateNodeWithParent($type: String!, $title: String!, $description: String, $parentId: String) {
+  createNode(type: $type, title: $title, description: $description, parentId: $parentId) {
+    id type title description status createdAt updatedAt
   }
 }`
 
@@ -324,6 +348,7 @@ export const LOCAL_CONTRACT_OPERATIONS = {
   CREATE_PROJECT,
   CREATE_NODE,
   CREATE_TASK,
+  CREATE_NODE_WITH_PARENT,
   UPDATE_NODE,
   UPDATE_STATUS,
   APPROVE_NODE,

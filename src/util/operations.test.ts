@@ -57,7 +57,6 @@ describe('commands send canonical operations (no re-inlined queries)', () => {
     ],
     'feature.ts': [
       'CREATE_NODE',
-      'CREATE_EDGE',
       'DESCENDANTS',
       'DESCENDANTS_BRIEF',
       'UPDATE_NODE',
@@ -66,7 +65,6 @@ describe('commands send canonical operations (no re-inlined queries)', () => {
     ],
     'task.ts': [
       'CREATE_TASK',
-      'LINK_TASK',
       'READY_TASKS',
       'ALL_TASKS',
       'LIST_TASKS',

@@ -85,6 +85,7 @@ export const typeDefs = /* GraphQL */ `
       description: String
       status: String
       metadata: String
+      parentId: String
     ): Node!
     updateNode(
       id: String!

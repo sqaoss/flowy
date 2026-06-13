@@ -151,6 +151,79 @@ describe('createResolvers', () => {
     })
   })
 
+  describe('Mutation.createNode with parentId (F24)', () => {
+    it('creates the node and a part_of edge to the parent atomically', () => {
+      const parent = resolvers.Mutation.createNode(null, {
+        type: 'feature',
+        title: 'Parent Feature',
+      })
+      const child = resolvers.Mutation.createNode(null, {
+        type: 'task',
+        title: 'Child Task',
+        parentId: parent.id,
+      })
+      expect(child.id).toMatch(/^task_/)
+      // the node exists
+      expect(resolvers.Query.node(null, { id: child.id })?.id).toBe(child.id)
+      // a part_of edge child -> parent exists (child reachable from parent)
+      const children = resolvers.Query.descendants(null, {
+        nodeId: parent.id,
+        relation: 'part_of',
+        maxDepth: 1,
+      })
+      expect(children.map((n) => n.id)).toContain(child.id)
+    })
+
+    it('writes a create audit row and a create_edge audit row for the link', () => {
+      const parent = resolvers.Mutation.createNode(null, {
+        type: 'feature',
+        title: 'Parent',
+      })
+      const child = resolvers.Mutation.createNode(null, {
+        type: 'task',
+        title: 'Child',
+        parentId: parent.id,
+      })
+      const childHistory = resolvers.Query.auditLog(null, { nodeId: child.id })
+      const actions = childHistory.map((e) => e.action)
+      expect(actions).toContain('create')
+      expect(actions).toContain('create_edge')
+      const edgeEntry = childHistory.find((e) => e.action === 'create_edge')
+      expect(edgeEntry?.field).toBe('part_of')
+      expect(edgeEntry?.newValue).toBe(parent.id)
+    })
+
+    it('rejects a non-existent parent with NOT_FOUND and creates no orphan', () => {
+      const before = resolvers.Query.nodes(null, {})
+      try {
+        resolvers.Mutation.createNode(null, {
+          type: 'task',
+          title: 'Orphan?',
+          parentId: 'feat_does_not_exist',
+        })
+        throw new Error('expected createNode to throw')
+      } catch (err) {
+        const e = err as { message: string; extensions?: { code?: string } }
+        expect(e.message).toContain('feat_does_not_exist')
+        expect(e.extensions?.code).toBe('NOT_FOUND')
+      }
+      // nothing was written: no new node, no dangling edge
+      const after = resolvers.Query.nodes(null, {})
+      expect(after).toHaveLength(before.length)
+      expect(after.some((n) => n.title === 'Orphan?')).toBe(false)
+    })
+
+    it('behaves exactly like a plain create when parentId is omitted', () => {
+      const node = resolvers.Mutation.createNode(null, {
+        type: 'task',
+        title: 'No parent',
+      })
+      expect(node.id).toMatch(/^task_/)
+      const history = resolvers.Query.auditLog(null, { nodeId: node.id })
+      expect(history.map((e) => e.action)).toEqual(['create'])
+    })
+  })
+
   describe('Query.node', () => {
     it('returns a node by id', () => {
       const created = resolvers.Mutation.createNode(null, {

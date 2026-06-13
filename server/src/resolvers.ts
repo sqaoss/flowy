@@ -495,6 +495,13 @@ export function createResolvers(db: Db, opts: ResolverOptions = {}) {
     },
 
     Mutation: {
+      // Create a node, optionally linking it under a parent in one atomic step
+      // (F24). When `parentId` is given we validate the parent exists FIRST —
+      // before any write — then, in a SINGLE transaction, insert the node, its
+      // `create` audit row, the `part_of` edge (child -> parent), and the
+      // edge's `create_edge` audit row. A failure anywhere rolls the whole unit
+      // back, so a bad link can never leave an orphaned node. With no
+      // `parentId`, behaviour is unchanged: just the node + its create audit.
       createNode: (
         _: unknown,
         args: {
@@ -503,6 +510,7 @@ export function createResolvers(db: Db, opts: ResolverOptions = {}) {
           description?: string
           status?: string
           metadata?: string
+          parentId?: string
         },
       ): NodeGql => {
         if (!args.title.trim()) throw validationError('Title is required')
@@ -510,6 +518,15 @@ export function createResolvers(db: Db, opts: ResolverOptions = {}) {
           throw validationError('Description cannot be empty')
         }
         if (args.status != null) assertValidStatus(args.status)
+        // Validate the parent up front so a bad link errors before any write.
+        if (args.parentId != null) {
+          const parentExists = db.raw
+            .query('SELECT id FROM nodes WHERE id = ?')
+            .get(args.parentId)
+          if (!parentExists) {
+            throw notFoundError(`Parent node ${args.parentId} not found`)
+          }
+        }
         const metadata =
           args.metadata != null ? normalizeMetadata(args.metadata) : null
         const id = generateId(args.type)
@@ -545,6 +562,18 @@ export function createResolvers(db: Db, opts: ResolverOptions = {}) {
             action: 'create',
             snapshot: node as unknown as Record<string, unknown>,
           })
+          if (args.parentId != null) {
+            db.raw.run(
+              'INSERT INTO edges (source_id, target_id, relation, created_at) VALUES (?, ?, ?, ?)',
+              [id, args.parentId, 'part_of', now],
+            )
+            insertAudit(db, {
+              nodeId: id,
+              action: 'create_edge',
+              field: 'part_of',
+              newValue: args.parentId,
+            })
+          }
         })()
         return node
       },
