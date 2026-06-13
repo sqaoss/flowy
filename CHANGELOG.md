@@ -1,3 +1,10 @@
+# [1.9.0](https://github.com/sqaoss/flowy/compare/v1.8.0...v1.9.0) (2026-06-13)
+
+
+### Features
+
+* tree relation filter + parentId/depth/relation output (F8) ([#38](https://github.com/sqaoss/flowy/issues/38)) ([0c91a2c](https://github.com/sqaoss/flowy/commit/0c91a2cfa2330a50d28f0889a979d0d233bb6c89))
+
 # [1.8.0](https://github.com/sqaoss/flowy/compare/v1.7.0...v1.8.0) (2026-06-13)
 
 
