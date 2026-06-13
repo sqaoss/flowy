@@ -7,7 +7,7 @@ let mockOutputError: ReturnType<typeof vi.fn>
 
 beforeEach(() => {
   mockLoadConfig = vi.fn(() => ({
-    mode: 'saas',
+    mode: 'remote',
     apiUrl: 'https://flowy-ai.fly.dev/graphql',
     apiKey: 'old-key',
     client: { name: '' },
@@ -26,6 +26,16 @@ beforeEach(() => {
       loadConfig: mockLoadConfig,
       saveConfig: mockSaveConfig,
       fingerprintKey: actual.fingerprintKey,
+      requireRemoteMode: (commandName: string) => {
+        const cfg = (mockLoadConfig as unknown as () => { mode: string })()
+        if (cfg.mode === 'local') {
+          const err = new Error(
+            `"flowy ${commandName}" is only available in remote mode. The active mode is local mode.`,
+          ) as Error & { code?: string }
+          err.code = 'LOCAL_MODE'
+          throw err
+        }
+      },
     }
   })
 
@@ -159,5 +169,30 @@ describe('key command', () => {
     expect(mockOutputError).toHaveBeenCalledWith(expect.any(Error))
     expect(mockSaveConfig).not.toHaveBeenCalled()
     expect(mockOutput).not.toHaveBeenCalled()
+  })
+
+  test('rotate errors cleanly in local mode without hitting the server', async () => {
+    mockLoadConfig.mockReturnValue({
+      mode: 'local',
+      apiUrl: 'http://localhost:4000/graphql',
+      apiKey: 'old-key',
+      client: { name: '' },
+      projects: {},
+    })
+    const mockGraphql = vi.fn()
+    vi.doMock('../util/client.ts', () => ({ graphql: mockGraphql }))
+
+    const { keyCommand } = await import('./key.ts')
+    await keyCommand.parseAsync(['rotate'], { from: 'user' })
+
+    expect(mockGraphql).not.toHaveBeenCalled()
+    expect(mockSaveConfig).not.toHaveBeenCalled()
+    expect(mockOutput).not.toHaveBeenCalled()
+    expect(mockOutputError).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: expect.stringMatching(/local mode/i),
+        code: 'LOCAL_MODE',
+      }),
+    )
   })
 })

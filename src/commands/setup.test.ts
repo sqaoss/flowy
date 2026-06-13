@@ -8,7 +8,7 @@ let mockSpawnSync: ReturnType<typeof vi.fn>
 
 beforeEach(() => {
   mockLoadConfig = vi.fn(() => ({
-    mode: 'saas',
+    mode: 'remote',
     apiUrl: 'https://flowy-ai.fly.dev/graphql',
     apiKey: '',
     client: { name: '' },
@@ -312,6 +312,53 @@ describe('setup command', () => {
 
     const warned = errSpy.mock.calls.map((c) => String(c[0])).join('\n')
     expect(warned).not.toMatch(/skill/i)
+    errSpy.mockRestore()
+  })
+
+  test('setup remote persists the API key before any later step (save-after-register)', async () => {
+    const mockGraphql = vi.fn().mockResolvedValue({
+      register: {
+        user: {
+          id: 'user_1',
+          email: 'a@b.com',
+          tier: null,
+          createdAt: '2026-06-13T00:00:00Z',
+          graceEndsAt: null,
+        },
+        apiKey: 'flowy_key_persisted',
+        checkoutUrl: null,
+      },
+    })
+    vi.doMock('../util/client.ts', () => ({ graphql: mockGraphql }))
+
+    // The skill install (a step AFTER the key is obtained) blows up hard.
+    // The key must already be on disk by then so the user is never stranded.
+    let keySavedBeforeSkillInstall = false
+    mockSaveConfig.mockImplementation((cfg: { apiKey?: string }) => {
+      if (cfg.apiKey === 'flowy_key_persisted')
+        keySavedBeforeSkillInstall = true
+    })
+    mockSpawnSync.mockImplementation((cmd: string) => {
+      if (cmd === 'npx') {
+        // By the time the (post-register) skill install runs, the key is saved.
+        expect(keySavedBeforeSkillInstall).toBe(true)
+        throw new Error('npx exploded')
+      }
+      return { status: 0, stdout: Buffer.from('') }
+    })
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    const { setupCommand } = await import('./setup.ts')
+    await setupCommand.parseAsync(['remote', '--email', 'a@b.com'], {
+      from: 'user',
+    })
+
+    // The key was saved at least once with the real value before the failure.
+    expect(
+      mockSaveConfig.mock.calls.some(
+        (c) => (c[0] as { apiKey?: string }).apiKey === 'flowy_key_persisted',
+      ),
+    ).toBe(true)
     errSpy.mockRestore()
   })
 

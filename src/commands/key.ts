@@ -1,6 +1,11 @@
 import { Command } from 'commander'
 import { graphql } from '../util/client.ts'
-import { fingerprintKey, loadConfig, saveConfig } from '../util/config.ts'
+import {
+  fingerprintKey,
+  loadConfig,
+  requireRemoteMode,
+  saveConfig,
+} from '../util/config.ts'
 import { output, outputError } from '../util/format.ts'
 
 export const keyCommand = new Command('key').description('API key management')
@@ -14,6 +19,7 @@ keyCommand
   )
   .action(async (opts) => {
     try {
+      requireRemoteMode('key rotate')
       const data = await graphql<{
         rotateApiKey: {
           user: {

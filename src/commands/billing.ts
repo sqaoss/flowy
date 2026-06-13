@@ -1,5 +1,6 @@
 import { Command, Option } from 'commander'
 import { graphql } from '../util/client.ts'
+import { requireRemoteMode } from '../util/config.ts'
 import { output, outputError } from '../util/format.ts'
 
 const checkoutCommand = new Command('checkout')
@@ -11,6 +12,7 @@ const checkoutCommand = new Command('checkout')
   )
   .action(async (opts: { tier: string }) => {
     try {
+      requireRemoteMode('billing checkout')
       const data = await graphql<{ createCheckout: { url: string } }>(
         `mutation CreateCheckout($tier: String!) {
           createCheckout(tier: $tier) {
