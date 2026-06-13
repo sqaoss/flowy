@@ -1,3 +1,10 @@
+# [1.13.0](https://github.com/sqaoss/flowy/compare/v1.12.0...v1.13.0) (2026-06-13)
+
+
+### Features
+
+* transactional createNode(parentId), one-call task create, pre-validate feature (F24) ([#44](https://github.com/sqaoss/flowy/issues/44)) ([a950d7a](https://github.com/sqaoss/flowy/commit/a950d7a07bee0eb9bfac85f65c043dc28300ed0f))
+
 # [1.12.0](https://github.com/sqaoss/flowy/compare/v1.11.0...v1.12.0) (2026-06-13)
 
 
