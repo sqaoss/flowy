@@ -1,3 +1,17 @@
+# [1.6.0](https://github.com/sqaoss/flowy/compare/v1.5.0...v1.6.0) (2026-06-13)
+
+
+### Features
+
+* **cli:** idempotent import + export (P0-6/F3) ([#33](https://github.com/sqaoss/flowy/issues/33)) ([201983c](https://github.com/sqaoss/flowy/commit/201983ce89cef7ae902f6c02c45acc17aebf5966))
+
+# [1.5.0](https://github.com/sqaoss/flowy/compare/v1.4.0...v1.5.0) (2026-06-13)
+
+
+### Features
+
+* dependency read-back, task deps, list --ready, server readyTasks ([#31](https://github.com/sqaoss/flowy/issues/31)) ([320e8ba](https://github.com/sqaoss/flowy/commit/320e8bae355cdbc4809e8264c8cc280638fe71b5))
+
 # [1.4.0](https://github.com/sqaoss/flowy/compare/v1.3.1...v1.4.0) (2026-06-13)
 
 
