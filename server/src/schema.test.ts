@@ -70,7 +70,7 @@ describe('schema', () => {
     expect(fields.tree).toBeUndefined()
   })
 
-  it('Mutation type has createNode, updateNode, approveNode, createEdge, removeEdge', () => {
+  it('Mutation type has createNode, updateNode, approveNode, deleteNode, createEdge, removeEdge', () => {
     const mutationType = schema.getType(
       'Mutation',
     ) as import('graphql').GraphQLObjectType
@@ -78,16 +78,50 @@ describe('schema', () => {
     expect(fields.createNode).toBeDefined()
     expect(fields.updateNode).toBeDefined()
     expect(fields.approveNode).toBeDefined()
+    expect(fields.deleteNode).toBeDefined()
     expect(fields.createEdge).toBeDefined()
     expect(fields.removeEdge).toBeDefined()
   })
 
-  it('Mutation type does not have deleteNode or deleteEdge', () => {
+  it('createNode accepts type, title, description, status, metadata args', () => {
     const mutationType = schema.getType(
       'Mutation',
     ) as import('graphql').GraphQLObjectType
-    const fields = mutationType.getFields()
-    expect(fields.deleteNode).toBeUndefined()
-    expect(fields.deleteEdge).toBeUndefined()
+    const args = mutationType.getFields().createNode.args.map((a) => a.name)
+    expect(args).toEqual(
+      expect.arrayContaining([
+        'type',
+        'title',
+        'description',
+        'status',
+        'metadata',
+      ]),
+    )
+  })
+
+  it('updateNode accepts id, title, description, status, metadata args', () => {
+    const mutationType = schema.getType(
+      'Mutation',
+    ) as import('graphql').GraphQLObjectType
+    const args = mutationType.getFields().updateNode.args.map((a) => a.name)
+    expect(args).toEqual(
+      expect.arrayContaining([
+        'id',
+        'title',
+        'description',
+        'status',
+        'metadata',
+      ]),
+    )
+  })
+
+  it('deleteNode returns Boolean and takes an id arg', () => {
+    const mutationType = schema.getType(
+      'Mutation',
+    ) as import('graphql').GraphQLObjectType
+    const deleteNode = mutationType.getFields().deleteNode
+    const args = deleteNode.args.map((a) => a.name)
+    expect(args).toEqual(expect.arrayContaining(['id']))
+    expect(String(deleteNode.type)).toContain('Boolean')
   })
 })

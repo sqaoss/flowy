@@ -28,9 +28,22 @@ export const typeDefs = /* GraphQL */ `
   }
 
   type Mutation {
-    createNode(type: String!, title: String!, description: String): Node!
-    updateNode(id: String!, status: String): Node!
+    createNode(
+      type: String!
+      title: String!
+      description: String
+      status: String
+      metadata: String
+    ): Node!
+    updateNode(
+      id: String!
+      title: String
+      description: String
+      status: String
+      metadata: String
+    ): Node!
     approveNode(id: String!): Node!
+    deleteNode(id: String!): Boolean!
     createEdge(sourceId: String!, targetId: String!, relation: String!): Edge!
     removeEdge(sourceId: String!, targetId: String!, relation: String!): Boolean!
   }

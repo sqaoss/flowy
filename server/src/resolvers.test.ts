@@ -96,6 +96,59 @@ describe('createResolvers', () => {
       expect(typeof node.createdAt).toBe('string')
       expect(typeof node.updatedAt).toBe('string')
     })
+
+    it('persists metadata as JSON and reads it back unchanged', () => {
+      const created = resolvers.Mutation.createNode(null, {
+        type: 'task',
+        title: 'With meta',
+        metadata: '{"priority":"high","effort":3}',
+      })
+      expect(created.metadata).toBe('{"priority":"high","effort":3}')
+      const found = find(resolvers, created.id)
+      expect(JSON.parse(found.metadata as string)).toEqual({
+        priority: 'high',
+        effort: 3,
+      })
+    })
+
+    it('accepts an explicit initial status', () => {
+      const node = resolvers.Mutation.createNode(null, {
+        type: 'task',
+        title: 'Started',
+        status: 'in_progress',
+      })
+      expect(node.status).toBe('in_progress')
+    })
+
+    it('rejects an invalid initial status with VALIDATION_ERROR', () => {
+      try {
+        resolvers.Mutation.createNode(null, {
+          type: 'task',
+          title: 'Bad',
+          status: 'bogus',
+        })
+        throw new Error('expected createNode to throw')
+      } catch (err) {
+        const e = err as { message: string; extensions?: { code?: string } }
+        expect(e.message).toContain('Invalid status: bogus')
+        expect(e.extensions?.code).toBe('VALIDATION_ERROR')
+      }
+    })
+
+    it('rejects non-JSON metadata with VALIDATION_ERROR', () => {
+      try {
+        resolvers.Mutation.createNode(null, {
+          type: 'task',
+          title: 'Bad meta',
+          metadata: 'not json',
+        })
+        throw new Error('expected createNode to throw')
+      } catch (err) {
+        const e = err as { message: string; extensions?: { code?: string } }
+        expect(e.message).toContain('metadata')
+        expect(e.extensions?.code).toBe('VALIDATION_ERROR')
+      }
+    })
   })
 
   describe('Query.node', () => {
@@ -160,6 +213,189 @@ describe('createResolvers', () => {
           status: 'done',
         }),
       ).toThrow('Node nonexistent not found')
+    })
+
+    it('updates the title, leaving other fields untouched', () => {
+      const node = create(resolvers, {
+        type: 'task',
+        title: 'Old title',
+        description: 'keep me',
+      })
+      const updated = resolvers.Mutation.updateNode(null, {
+        id: node.id,
+        title: 'New title',
+      })
+      expect(updated.title).toBe('New title')
+      expect(updated.description).toBe('keep me')
+      expect(updated.status).toBe('draft')
+    })
+
+    it('updates the description independently', () => {
+      const node = create(resolvers, {
+        type: 'task',
+        title: 'Title',
+        description: 'old desc',
+      })
+      const updated = resolvers.Mutation.updateNode(null, {
+        id: node.id,
+        description: 'new desc',
+      })
+      expect(updated.description).toBe('new desc')
+      expect(updated.title).toBe('Title')
+    })
+
+    it('updates metadata independently and round-trips', () => {
+      const node = create(resolvers, { type: 'task', title: 'Title' })
+      const updated = resolvers.Mutation.updateNode(null, {
+        id: node.id,
+        metadata: '{"source":"import","effort":5}',
+      })
+      expect(JSON.parse(updated.metadata as string)).toEqual({
+        source: 'import',
+        effort: 5,
+      })
+      const found = find(resolvers, node.id)
+      expect(JSON.parse(found.metadata as string)).toEqual({
+        source: 'import',
+        effort: 5,
+      })
+    })
+
+    it('updates several fields at once', () => {
+      const node = create(resolvers, { type: 'task', title: 'Title' })
+      const updated = resolvers.Mutation.updateNode(null, {
+        id: node.id,
+        title: 'Renamed',
+        description: 'desc',
+        status: 'in_progress',
+        metadata: '{"k":"v"}',
+      })
+      expect(updated.title).toBe('Renamed')
+      expect(updated.description).toBe('desc')
+      expect(updated.status).toBe('in_progress')
+      expect(JSON.parse(updated.metadata as string)).toEqual({ k: 'v' })
+    })
+
+    it('rejects non-JSON metadata on update with VALIDATION_ERROR', () => {
+      const node = create(resolvers, { type: 'task', title: 'Title' })
+      try {
+        resolvers.Mutation.updateNode(null, {
+          id: node.id,
+          metadata: 'nope',
+        })
+        throw new Error('expected updateNode to throw')
+      } catch (err) {
+        const e = err as { message: string; extensions?: { code?: string } }
+        expect(e.message).toContain('metadata')
+        expect(e.extensions?.code).toBe('VALIDATION_ERROR')
+      }
+    })
+
+    it('not-found error carries the NOT_FOUND code', () => {
+      try {
+        resolvers.Mutation.updateNode(null, {
+          id: 'missing',
+          title: 'x',
+        })
+        throw new Error('expected updateNode to throw')
+      } catch (err) {
+        const e = err as { extensions?: { code?: string } }
+        expect(e.extensions?.code).toBe('NOT_FOUND')
+      }
+    })
+
+    it('rejects an empty title with VALIDATION_ERROR', () => {
+      const node = create(resolvers, { type: 'task', title: 'Title' })
+      try {
+        resolvers.Mutation.updateNode(null, { id: node.id, title: '   ' })
+        throw new Error('expected updateNode to throw')
+      } catch (err) {
+        const e = err as { extensions?: { code?: string } }
+        expect(e.extensions?.code).toBe('VALIDATION_ERROR')
+      }
+    })
+  })
+
+  describe('Mutation.deleteNode', () => {
+    it('deletes a leaf node and returns true', () => {
+      const node = create(resolvers, { type: 'task', title: 'Leaf' })
+      const result = resolvers.Mutation.deleteNode(null, { id: node.id })
+      expect(result).toBe(true)
+      expect(resolvers.Query.node(null, { id: node.id })).toBeNull()
+    })
+
+    it('removes incident blocks edges when deleting a leaf', () => {
+      const blocker = create(resolvers, { type: 'task', title: 'Blocker' })
+      const blocked = create(resolvers, { type: 'task', title: 'Blocked' })
+      resolvers.Mutation.createEdge(null, {
+        sourceId: blocker.id,
+        targetId: blocked.id,
+        relation: 'blocks',
+      })
+
+      resolvers.Mutation.deleteNode(null, { id: blocked.id })
+
+      // the blocks edge that referenced the deleted node must be gone
+      const edges = db.raw
+        .query<{ c: number }, [string, string]>(
+          'SELECT COUNT(*) AS c FROM edges WHERE source_id = ? OR target_id = ?',
+        )
+        .get(blocked.id, blocked.id) as { c: number }
+      expect(edges.c).toBe(0)
+    })
+
+    it('deletes a node together with its part_of edge to its parent', () => {
+      const project = create(resolvers, { type: 'project', title: 'P' })
+      const feature = create(resolvers, { type: 'feature', title: 'F' })
+      resolvers.Mutation.createEdge(null, {
+        sourceId: feature.id,
+        targetId: project.id,
+        relation: 'part_of',
+      })
+
+      const result = resolvers.Mutation.deleteNode(null, { id: feature.id })
+      expect(result).toBe(true)
+      // parent survives
+      expect(resolvers.Query.node(null, { id: project.id })).not.toBeNull()
+      // the part_of edge is gone
+      const edges = db.raw
+        .query<{ c: number }, [string]>(
+          'SELECT COUNT(*) AS c FROM edges WHERE source_id = ?',
+        )
+        .get(feature.id) as { c: number }
+      expect(edges.c).toBe(0)
+    })
+
+    it('refuses to delete a node that has children (CONFLICT)', () => {
+      const project = create(resolvers, { type: 'project', title: 'P' })
+      const feature = create(resolvers, { type: 'feature', title: 'F' })
+      resolvers.Mutation.createEdge(null, {
+        sourceId: feature.id,
+        targetId: project.id,
+        relation: 'part_of',
+      })
+
+      try {
+        resolvers.Mutation.deleteNode(null, { id: project.id })
+        throw new Error('expected deleteNode to throw')
+      } catch (err) {
+        const e = err as { message: string; extensions?: { code?: string } }
+        expect(e.extensions?.code).toBe('CONFLICT')
+        expect(e.message).toContain('child')
+      }
+      // node not deleted
+      expect(resolvers.Query.node(null, { id: project.id })).not.toBeNull()
+    })
+
+    it('throws NOT_FOUND for a missing node', () => {
+      try {
+        resolvers.Mutation.deleteNode(null, { id: 'missing' })
+        throw new Error('expected deleteNode to throw')
+      } catch (err) {
+        const e = err as { message: string; extensions?: { code?: string } }
+        expect(e.extensions?.code).toBe('NOT_FOUND')
+        expect(e.message).toContain('missing')
+      }
     })
   })
 
