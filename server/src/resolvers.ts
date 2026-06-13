@@ -59,6 +59,30 @@ const VALID_STATUSES = new Set([
   'cancelled',
 ])
 
+function assertValidStatus(status: string): void {
+  if (!VALID_STATUSES.has(status)) {
+    throw validationError(
+      `Invalid status: ${status}. Must be one of: ${[...VALID_STATUSES].join(', ')}`,
+    )
+  }
+}
+
+/**
+ * Validate that `metadata` is a JSON string and return its canonical form.
+ * Metadata is stored as a JSON string (the column and the GraphQL field are
+ * both String); callers pass a JSON-encoded string. Non-JSON input is rejected
+ * with a VALIDATION_ERROR so agents can self-correct.
+ */
+function normalizeMetadata(metadata: string): string {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(metadata)
+  } catch {
+    throw validationError('Invalid metadata: must be a valid JSON string')
+  }
+  return JSON.stringify(parsed)
+}
+
 function generateId(type: string): string {
   const prefix = PREFIX_MAP[type] ?? type
   return `${prefix}_${nanoid(12)}`
@@ -208,49 +232,120 @@ export function createResolvers(db: Db) {
     Mutation: {
       createNode: (
         _: unknown,
-        args: { type: string; title: string; description?: string },
+        args: {
+          type: string
+          title: string
+          description?: string
+          status?: string
+          metadata?: string
+        },
       ): NodeGql => {
         if (!args.title.trim()) throw validationError('Title is required')
         if (args.description != null && !args.description.trim()) {
           throw validationError('Description cannot be empty')
         }
+        if (args.status != null) assertValidStatus(args.status)
+        const metadata =
+          args.metadata != null ? normalizeMetadata(args.metadata) : null
         const id = generateId(args.type)
         const now = new Date().toISOString()
         const description = args.description ?? null
+        const status = args.status ?? 'draft'
         db.raw.run(
           'INSERT INTO nodes (id, type, title, description, status, metadata, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-          [id, args.type, args.title, description, 'draft', null, now, now],
+          [id, args.type, args.title, description, status, metadata, now, now],
         )
         return {
           id,
           type: args.type,
           title: args.title,
           description,
-          status: 'draft',
-          metadata: null,
+          status,
+          metadata,
           createdAt: now,
           updatedAt: now,
         }
       },
 
-      updateNode: (_: unknown, args: { id: string; status?: string }) => {
+      updateNode: (
+        _: unknown,
+        args: {
+          id: string
+          title?: string
+          description?: string
+          status?: string
+          metadata?: string
+        },
+      ) => {
         const existing = db.raw
           .query('SELECT * FROM nodes WHERE id = ?')
           .get(args.id) as NodeRow | null
         if (!existing) throw notFoundError(`Node ${args.id} not found`)
-        const newStatus = args.status ?? existing.status
-        if (args.status && !VALID_STATUSES.has(args.status)) {
-          throw validationError(
-            `Invalid status: ${args.status}. Must be one of: ${[...VALID_STATUSES].join(', ')}`,
-          )
+
+        if (args.title != null && !args.title.trim()) {
+          throw validationError('Title cannot be empty')
+        }
+        if (args.description != null && !args.description.trim()) {
+          throw validationError('Description cannot be empty')
+        }
+        if (args.status != null) assertValidStatus(args.status)
+
+        const next: NodeRow = {
+          ...existing,
+          title: args.title ?? existing.title,
+          description:
+            args.description !== undefined
+              ? args.description
+              : existing.description,
+          status: args.status ?? existing.status,
+          metadata:
+            args.metadata != null
+              ? normalizeMetadata(args.metadata)
+              : existing.metadata,
         }
         const now = new Date().toISOString()
-        db.raw.run('UPDATE nodes SET status = ?, updated_at = ? WHERE id = ?', [
-          newStatus,
-          now,
-          args.id,
-        ])
-        return rowToNode({ ...existing, status: newStatus, updated_at: now })
+        db.raw.run(
+          'UPDATE nodes SET title = ?, description = ?, status = ?, metadata = ?, updated_at = ? WHERE id = ?',
+          [
+            next.title,
+            next.description,
+            next.status,
+            next.metadata,
+            now,
+            args.id,
+          ],
+        )
+        return rowToNode({ ...next, updated_at: now })
+      },
+
+      deleteNode: (_: unknown, args: { id: string }): boolean => {
+        const existing = db.raw
+          .query('SELECT id FROM nodes WHERE id = ?')
+          .get(args.id) as { id: string } | null
+        if (!existing) throw notFoundError(`Node ${args.id} not found`)
+
+        // The hierarchy is client -> project -> feature -> task via `part_of`
+        // edges (source = child, target = parent). A node with children must
+        // not be orphaned; reject rather than cascade-delete the subtree.
+        const childCount = db.raw
+          .query(
+            'SELECT COUNT(*) AS c FROM edges WHERE target_id = ? AND relation = ?',
+          )
+          .get(args.id, 'part_of') as { c: number }
+        if (childCount.c > 0) {
+          throw conflictError(
+            `Cannot delete node ${args.id}: it has ${childCount.c} child node(s). Delete or re-link them first.`,
+          )
+        }
+
+        db.raw.transaction(() => {
+          db.raw.run('DELETE FROM edges WHERE source_id = ? OR target_id = ?', [
+            args.id,
+            args.id,
+          ])
+          db.raw.run('DELETE FROM nodes WHERE id = ?', [args.id])
+        })()
+        return true
       },
 
       approveNode: (_: unknown, args: { id: string }) => {

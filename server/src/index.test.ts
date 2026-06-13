@@ -22,4 +22,33 @@ describe('createServer', () => {
     expect(res.status).toBe(200)
     expect(json).toEqual({ status: 'ok' })
   })
+
+  it('binds to 127.0.0.1 by default, not all interfaces', () => {
+    instance = createServer({ dbPath: ':memory:', port: 0 })
+
+    expect(instance.hostname).toBe('127.0.0.1')
+    expect(instance.server.hostname).toBe('127.0.0.1')
+  })
+
+  it('allows the bind hostname to be overridden via opts', () => {
+    instance = createServer({
+      dbPath: ':memory:',
+      port: 0,
+      hostname: '0.0.0.0',
+    })
+
+    expect(instance.hostname).toBe('0.0.0.0')
+  })
+
+  it('allows the bind hostname to be overridden via HOST env', () => {
+    const prev = process.env.HOST
+    process.env.HOST = '0.0.0.0'
+    try {
+      instance = createServer({ dbPath: ':memory:', port: 0 })
+      expect(instance.hostname).toBe('0.0.0.0')
+    } finally {
+      if (prev === undefined) delete process.env.HOST
+      else process.env.HOST = prev
+    }
+  })
 })
