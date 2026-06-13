@@ -1,3 +1,10 @@
+# [1.12.0](https://github.com/sqaoss/flowy/compare/v1.11.0...v1.12.0) (2026-06-13)
+
+
+### Features
+
+* **cli:** local SQLite backup/restore (P1-9/F26) ([#43](https://github.com/sqaoss/flowy/issues/43)) ([a7350ee](https://github.com/sqaoss/flowy/commit/a7350eea563eb3ebcd977469a0b3dc499c68757e))
+
 # [1.11.0](https://github.com/sqaoss/flowy/compare/v1.10.0...v1.11.0) (2026-06-13)
 
 
