@@ -1,3 +1,10 @@
+## [1.13.1](https://github.com/sqaoss/flowy/compare/v1.13.0...v1.13.1) (2026-06-13)
+
+
+### Bug Fixes
+
+* **server:** idempotent createEdge (F29) ([#45](https://github.com/sqaoss/flowy/issues/45)) ([7581a5d](https://github.com/sqaoss/flowy/commit/7581a5d77df315178d157499ad2470fcda7a7517))
+
 # [1.13.0](https://github.com/sqaoss/flowy/compare/v1.12.0...v1.13.0) (2026-06-13)
 
 
