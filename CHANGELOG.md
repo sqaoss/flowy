@@ -1,3 +1,10 @@
+# [1.14.0](https://github.com/sqaoss/flowy/compare/v1.13.1...v1.14.0) (2026-06-13)
+
+
+### Features
+
+* atomic task claim/next + transactional updateNode (F28) ([#48](https://github.com/sqaoss/flowy/issues/48)) ([b2ae846](https://github.com/sqaoss/flowy/commit/b2ae8464881ea846e4c52204ea8a7463d69a76ce))
+
 ## [1.13.1](https://github.com/sqaoss/flowy/compare/v1.13.0...v1.13.1) (2026-06-13)
 
 
