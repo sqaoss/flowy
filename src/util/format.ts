@@ -4,6 +4,11 @@ export function output(data: unknown): void {
 
 export function outputError(error: unknown): void {
   const message = error instanceof Error ? error.message : String(error)
-  console.error(JSON.stringify({ error: message }))
+  const rawCode =
+    error instanceof Error ? (error as { code?: unknown }).code : undefined
+  const code = typeof rawCode === 'string' ? rawCode : undefined
+  console.error(
+    JSON.stringify(code ? { error: message, code } : { error: message }),
+  )
   process.exit(1)
 }

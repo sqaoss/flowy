@@ -1,3 +1,24 @@
+## [1.2.2](https://github.com/sqaoss/flowy/compare/v1.2.1...v1.2.2) (2026-06-13)
+
+
+### Bug Fixes
+
+* unmask local server errors with extensions.code ([#24](https://github.com/sqaoss/flowy/issues/24)) ([f895433](https://github.com/sqaoss/flowy/commit/f895433c29e91a98d7b36d474be34fa95cc1c47b))
+
+## [1.2.1](https://github.com/sqaoss/flowy/compare/v1.2.0...v1.2.1) (2026-04-19)
+
+
+### Bug Fixes
+
+* add trailing period to project not-found error ([#20](https://github.com/sqaoss/flowy/issues/20)) ([264e684](https://github.com/sqaoss/flowy/commit/264e684ce26223456f99a45009359d88e88009d6))
+
+# [1.2.0](https://github.com/sqaoss/flowy/compare/v1.1.3...v1.2.0) (2026-03-30)
+
+
+### Features
+
+* sync CLI with SaaS billing, tier system, and key rotation ([340bd9f](https://github.com/sqaoss/flowy/commit/340bd9ff19622075884a1fedddb2617d6ae4d413))
+
 ## [1.1.3](https://github.com/sqaoss/flowy/compare/v1.1.2...v1.1.3) (2026-03-29)
 
 
