@@ -1,5 +1,13 @@
 import { describe, expect, test } from 'vitest'
-import { type Manifest, parseManifest, serializeManifest } from './manifest.ts'
+import {
+  buildNodeMetadata,
+  FLOWY_KEY_FIELD,
+  type Manifest,
+  parseManifest,
+  readClientKey,
+  serializeManifest,
+  stripClientKey,
+} from './manifest.ts'
 
 const VALID: Manifest = {
   version: 1,
@@ -107,5 +115,45 @@ describe('serializeManifest', () => {
     const text = serializeManifest(VALID)
     expect(text).toContain('\n')
     expect(text.endsWith('\n')).toBe(true)
+  })
+})
+
+describe('node metadata client-key', () => {
+  test('the reserved field is a single scalar key, not an edge namespace', () => {
+    expect(FLOWY_KEY_FIELD).toBe('__flowyKey')
+  })
+
+  test('buildNodeMetadata stamps the client-key alongside user metadata', () => {
+    const meta = JSON.parse(buildNodeMetadata('task-1', { priority: 'high' }))
+    expect(meta).toEqual({ priority: 'high', __flowyKey: 'task-1' })
+    // No edge data is ever stored in metadata.
+    expect(meta.__flowy).toBeUndefined()
+    expect(meta.edges).toBeUndefined()
+  })
+
+  test('buildNodeMetadata works with no user metadata', () => {
+    expect(JSON.parse(buildNodeMetadata('proj'))).toEqual({
+      __flowyKey: 'proj',
+    })
+  })
+
+  test('readClientKey extracts the key', () => {
+    expect(readClientKey(buildNodeMetadata('feat-1', { a: 1 }))).toBe('feat-1')
+  })
+
+  test('readClientKey returns null for absent/invalid metadata', () => {
+    expect(readClientKey(null)).toBeNull()
+    expect(readClientKey('{not json')).toBeNull()
+    expect(readClientKey(JSON.stringify({ a: 1 }))).toBeNull()
+  })
+
+  test('stripClientKey returns only user metadata', () => {
+    expect(
+      stripClientKey(buildNodeMetadata('x', { priority: 'high' })),
+    ).toEqual({ priority: 'high' })
+  })
+
+  test('stripClientKey returns undefined when only the key was stored', () => {
+    expect(stripClientKey(buildNodeMetadata('x'))).toBeUndefined()
   })
 })

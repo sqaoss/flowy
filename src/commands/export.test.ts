@@ -17,15 +17,14 @@ vi.mock('node:fs', () => ({
   writeFileSync: vi.fn(),
 }))
 
-const FLOWY_KEY = '__flowy'
+const FLOWY_KEY_FIELD = '__flowyKey'
 
-/** A server node row carrying its client-key and recorded edges in metadata. */
+/** A server node row stamped with its client-key only (no edges in metadata). */
 function srv(
   id: string,
   type: string,
   title: string,
   key: string,
-  edges: Array<[string, string]> = [],
   extraMeta: Record<string, unknown> = {},
 ): Record<string, unknown> {
   return {
@@ -34,14 +33,43 @@ function srv(
     title,
     description: null,
     status: 'draft',
-    metadata: JSON.stringify({
-      ...extraMeta,
-      [FLOWY_KEY]: {
-        key,
-        edges: edges.map(([target, relation]) => ({ target, relation })),
-      },
-    }),
+    metadata: JSON.stringify({ ...extraMeta, [FLOWY_KEY_FIELD]: key }),
   }
+}
+
+/**
+ * Build a graphql mock backed by a node set and a real-edge-model edge set.
+ * `edges` are SERVER-id triples; the `edges()` query returns connected nodes
+ * (with metadata) so export can resolve their client-keys.
+ */
+function mockServer(
+  graphql: ReturnType<typeof vi.fn>,
+  project: Record<string, unknown>,
+  descendants: Array<Record<string, unknown>>,
+  edges: Array<{ source: string; target: string; relation: string }> = [],
+) {
+  const byId = new Map<string, Record<string, unknown>>()
+  for (const n of [project, ...descendants]) byId.set(n.id as string, n)
+  graphql.mockImplementation(
+    async (query: string, variables?: Record<string, unknown>) => {
+      if (query.includes('descendants')) return { descendants }
+      if (query.includes('node(')) return { node: project }
+      if (query.includes('edges(')) {
+        const out = edges
+          .filter(
+            (e) =>
+              e.source === variables?.nodeId &&
+              e.relation === variables?.relation,
+          )
+          .map((e) => {
+            const n = byId.get(e.target)
+            return { id: e.target, metadata: n?.metadata ?? null }
+          })
+        return { edges: out }
+      }
+      return {}
+    },
+  )
 }
 
 describe('export command', () => {
@@ -54,35 +82,29 @@ describe('export command', () => {
     expect(exportCommand.name()).toBe('export')
   })
 
-  test('emits a manifest with client-keys and reconstructed edges', async () => {
+  test('emits a manifest with client-keys and edges read from the edge model', async () => {
     const { graphql } = await import('../util/client.ts')
     const { output } = await import('../util/format.ts')
     const { exportCommand } = await import('./export.ts')
 
     const project = srv('srv_proj', 'project', 'Demo', 'proj')
-    const feature = srv('srv_feat-1', 'feature', 'Auth', 'feat-1', [
-      ['proj', 'part_of'],
-    ])
-    const task1 = srv(
-      'srv_task-1',
-      'task',
-      'Login',
-      'task-1',
-      [['feat-1', 'part_of']],
-      { priority: 'high' },
-    )
-    const task2 = srv('srv_task-2', 'task', 'Logout', 'task-2', [
-      ['feat-1', 'part_of'],
-      ['task-1', 'blocks'],
-    ])
-
-    vi.mocked(graphql).mockImplementation(async (query: string) => {
-      if (query.includes('node(')) return { node: project }
-      if (query.includes('descendants')) {
-        return { descendants: [feature, task1, task2] }
-      }
-      return {}
+    const feature = srv('srv_feat-1', 'feature', 'Auth', 'feat-1')
+    const task1 = srv('srv_task-1', 'task', 'Login', 'task-1', {
+      priority: 'high',
     })
+    const task2 = srv('srv_task-2', 'task', 'Logout', 'task-2')
+
+    mockServer(
+      vi.mocked(graphql),
+      project,
+      [feature, task1, task2],
+      [
+        { source: 'srv_feat-1', target: 'srv_proj', relation: 'part_of' },
+        { source: 'srv_task-1', target: 'srv_feat-1', relation: 'part_of' },
+        { source: 'srv_task-2', target: 'srv_feat-1', relation: 'part_of' },
+        { source: 'srv_task-2', target: 'srv_task-1', relation: 'blocks' },
+      ],
+    )
 
     await exportCommand.parseAsync([], { from: 'user' })
 
@@ -93,17 +115,20 @@ describe('export command', () => {
     }
 
     expect(manifest.version).toBe(1)
-    // 1 project + 1 feature + 2 tasks.
     expect(manifest.nodes).toHaveLength(4)
 
     const byKey = Object.fromEntries(manifest.nodes.map((n) => [n.key, n]))
     expect(byKey.proj).toMatchObject({ type: 'project', title: 'Demo' })
-    // The reserved __flowy namespace is stripped from exported metadata.
+    // The reserved client-key field is stripped from exported user metadata.
     expect(byKey['task-1']).toMatchObject({
       type: 'task',
       parent: 'feat-1',
       metadata: { priority: 'high' },
     })
+    expect(
+      (byKey['task-1'] as { metadata: Record<string, unknown> }).metadata
+        .__flowyKey,
+    ).toBeUndefined()
 
     // 3 part_of edges + 1 blocks edge, expressed in client-keys.
     expect(manifest.edges).toHaveLength(4)
@@ -119,17 +144,47 @@ describe('export command', () => {
     })
   })
 
+  test('captures an externally-created (task block) edge, not just import edges', async () => {
+    const { graphql } = await import('../util/client.ts')
+    const { output } = await import('../util/format.ts')
+    const { exportCommand } = await import('./export.ts')
+
+    const project = srv('srv_proj', 'project', 'Demo', 'proj')
+    const task1 = srv('srv_task-1', 'task', 'A', 'task-1')
+    const task2 = srv('srv_task-2', 'task', 'B', 'task-2')
+
+    mockServer(
+      vi.mocked(graphql),
+      project,
+      [task1, task2],
+      [
+        { source: 'srv_task-1', target: 'srv_proj', relation: 'part_of' },
+        { source: 'srv_task-2', target: 'srv_proj', relation: 'part_of' },
+        // This edge exists only in the edge model (e.g. created by `task block`),
+        // never recorded in any node metadata — export must still capture it.
+        { source: 'srv_task-1', target: 'srv_task-2', relation: 'blocks' },
+      ],
+    )
+
+    await exportCommand.parseAsync([], { from: 'user' })
+
+    const manifest = vi.mocked(output).mock.calls.at(-1)?.[0] as {
+      edges: Array<Record<string, unknown>>
+    }
+    expect(manifest.edges).toContainEqual({
+      source: 'task-1',
+      target: 'task-2',
+      relation: 'blocks',
+    })
+  })
+
   test('writes to a file when an output path is given', async () => {
     const { graphql } = await import('../util/client.ts')
     const { writeFileSync } = await import('node:fs')
     const { exportCommand } = await import('./export.ts')
 
     const project = srv('srv_proj', 'project', 'Demo', 'proj')
-    vi.mocked(graphql).mockImplementation(async (query: string) => {
-      if (query.includes('node(')) return { node: project }
-      if (query.includes('descendants')) return { descendants: [] }
-      return {}
-    })
+    mockServer(vi.mocked(graphql), project, [])
 
     await exportCommand.parseAsync(['out.json'], { from: 'user' })
 
@@ -148,20 +203,19 @@ describe('export command', () => {
     const { exportCommand } = await import('./export.ts')
 
     const project = srv('srv_proj', 'project', 'Demo', 'proj')
-    const feature = srv('srv_feat-1', 'feature', 'Auth', 'feat-1', [
-      ['proj', 'part_of'],
-    ])
-    const task = srv('srv_task-1', 'task', 'Login', 'task-1', [
-      ['feat-1', 'part_of'],
-    ])
+    const feature = srv('srv_feat-1', 'feature', 'Auth', 'feat-1')
+    const task = srv('srv_task-1', 'task', 'Login', 'task-1')
 
-    vi.mocked(graphql).mockImplementation(async (query: string) => {
-      if (query.includes('node(')) return { node: project }
-      if (query.includes('descendants')) {
-        return { descendants: [feature, task] }
-      }
-      return {}
-    })
+    mockServer(
+      vi.mocked(graphql),
+      project,
+      [feature, task],
+      [
+        { source: 'srv_feat-1', target: 'srv_proj', relation: 'part_of' },
+        { source: 'srv_task-1', target: 'srv_feat-1', relation: 'part_of' },
+        { source: 'srv_task-1', target: 'srv_feat-1', relation: 'blocks' },
+      ],
+    )
 
     await exportCommand.parseAsync([], { from: 'user' })
 

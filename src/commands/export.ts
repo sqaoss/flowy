@@ -8,10 +8,13 @@ import {
   type Manifest,
   type ManifestEdge,
   type ManifestNode,
-  readFlowyMeta,
+  readClientKey,
   serializeManifest,
-  stripFlowyMeta,
+  stripClientKey,
 } from '../util/manifest.ts'
+
+/** Relations export captures from the real edge model. */
+const RELATIONS = ['part_of', 'blocks'] as const
 
 interface ServerNode {
   id: string
@@ -29,6 +32,12 @@ const PROJECT_QUERY = `query ExportProject($id: String!) {
 const DESCENDANTS_QUERY = `query ExportDescendants($nodeId: String!, $relation: String, $maxDepth: Int) {
   descendants(nodeId: $nodeId, relation: $relation, maxDepth: $maxDepth) {
     id type title description status metadata
+  }
+}`
+
+const EDGES_QUERY = `query ExportEdges($nodeId: String!, $relation: String!) {
+  edges(nodeId: $nodeId, relation: $relation, direction: "outgoing") {
+    id metadata
   }
 }`
 
@@ -53,31 +62,54 @@ export const exportCommand = new Command('export')
 
       const serverNodes = [root.node, ...descendants.descendants]
 
-      const nodes: ManifestNode[] = []
-      const edges: ManifestEdge[] = []
-      for (const sn of serverNodes) {
-        const flowy = readFlowyMeta(sn.metadata)
-        // Without a recorded client-key a node cannot round-trip; fall back to
-        // its server id so an un-stamped node is still exported deterministically.
-        const key = flowy?.key ?? sn.id
+      // Map server id -> client-key so edges (which the server returns by id)
+      // can be expressed in the manifest's client-key space. A node without a
+      // recorded key falls back to its server id so it still round-trips.
+      const keyOf = (id: string, metadata: string | null) =>
+        readClientKey(metadata) ?? id
+      const keyById = new Map<string, string>()
+      for (const sn of serverNodes)
+        keyById.set(sn.id, keyOf(sn.id, sn.metadata))
 
-        const node: ManifestNode = { key, type: sn.type, title: sn.title }
+      const nodes: ManifestNode[] = serverNodes.map((sn) => {
+        const node: ManifestNode = {
+          key: keyById.get(sn.id) ?? sn.id,
+          type: sn.type,
+          title: sn.title,
+        }
         if (sn.description != null) node.description = sn.description
         if (sn.status != null) node.status = sn.status
-        const userMeta = stripFlowyMeta(sn.metadata)
+        const userMeta = stripClientKey(sn.metadata)
         if (userMeta) node.metadata = userMeta
+        return node
+      })
 
-        for (const edge of flowy?.edges ?? []) {
-          // part_of is surfaced as the node's `parent` (so import re-derives it)
-          // and is also emitted in the edge list for a complete dependency graph.
-          if (edge.relation === 'part_of') node.parent = edge.target
-          edges.push({
-            source: key,
-            target: edge.target,
-            relation: edge.relation,
-          })
+      // Read edges back through the real edge model, so we capture ALL edges,
+      // including ones created outside import (e.g. `task block`), not just
+      // those import created.
+      const edges: ManifestEdge[] = []
+      const seen = new Set<string>()
+      for (const sn of serverNodes) {
+        const sourceKey = keyById.get(sn.id) ?? sn.id
+        for (const relation of RELATIONS) {
+          const data = await graphql<{
+            edges: Array<{ id: string; metadata: string | null }>
+          }>(EDGES_QUERY, { nodeId: sn.id, relation })
+          for (const target of data.edges) {
+            const targetKey =
+              keyById.get(target.id) ?? keyOf(target.id, target.metadata)
+            const k = `${sourceKey}|${targetKey}|${relation}`
+            if (seen.has(k)) continue
+            seen.add(k)
+            // part_of is surfaced as the node's `parent` so import re-derives it,
+            // and is also kept in the edge list for a complete dependency graph.
+            if (relation === 'part_of') {
+              const node = nodes.find((n) => n.key === sourceKey)
+              if (node) node.parent = targetKey
+            }
+            edges.push({ source: sourceKey, target: targetKey, relation })
+          }
         }
-        nodes.push(node)
       }
 
       const manifest: Manifest = { version: MANIFEST_VERSION, nodes, edges }

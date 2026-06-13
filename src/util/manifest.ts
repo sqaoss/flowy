@@ -8,6 +8,11 @@
  * all format knowledge in this one module means the on-disk format (JSON
  * today — see roadmap §G, an open owner decision) can change without touching
  * the import/export command logic.
+ *
+ * Edges live in the real edge model (`createEdge` / `Query.edges`), not in
+ * node metadata. The only thing import stamps into metadata is the node's
+ * client-key (for idempotent node upsert); export reads edges back via
+ * `Query.edges`, so it captures edges created by any path (e.g. `task block`).
  */
 
 export interface ManifestNode {
@@ -20,7 +25,7 @@ export interface ManifestNode {
   status?: string
   /** Client-key of the parent node; drives the implicit `part_of` edge. */
   parent?: string
-  /** Arbitrary user metadata (the reserved `__flowy` namespace is stripped). */
+  /** Arbitrary user metadata (the reserved `__flowyKey` field is stripped). */
   metadata?: Record<string, unknown>
 }
 
@@ -42,25 +47,18 @@ export interface Manifest {
 export const MANIFEST_VERSION = 1
 
 /**
- * Reserved metadata namespace. Import stamps each server node's `metadata`
- * with `{ [FLOWY_META_KEY]: { key, edges } }` so that (a) re-import can find
- * the node by client-key and (b) export can reconstruct edges without an
- * `edges` query (the bundled server has none). User metadata lives alongside
- * it at the top level and is preserved untouched.
+ * Reserved metadata field holding a node's client-key — the only thing import
+ * writes into metadata, purely so a re-import can find the node by its stable
+ * key and update in place rather than duplicating. User metadata lives
+ * alongside it at the top level and is preserved untouched; export strips this
+ * one field back out. Edges are NOT stored here (see the module header).
  */
-export const FLOWY_META_KEY = '__flowy'
+export const FLOWY_KEY_FIELD = '__flowyKey'
 
-export interface FlowyMeta {
-  /** The node's stable client-key. */
-  key: string
-  /** Outgoing edges by target client-key (includes the implicit `part_of`). */
-  edges: Array<{ target: string; relation: string }>
-}
-
-/** Extract the reserved `__flowy` namespace from a server node's metadata string. */
-export function readFlowyMeta(
+/** Read the reserved client-key field from a server node's metadata string. */
+export function readClientKey(
   metadata: string | null | undefined,
-): FlowyMeta | null {
+): string | null {
   if (!metadata) return null
   let parsed: unknown
   try {
@@ -69,21 +67,12 @@ export function readFlowyMeta(
     return null
   }
   if (!isObject(parsed)) return null
-  const flowy = parsed[FLOWY_META_KEY]
-  if (!isObject(flowy) || typeof flowy.key !== 'string') return null
-  const edges = Array.isArray(flowy.edges)
-    ? flowy.edges.filter(
-        (e): e is { target: string; relation: string } =>
-          isObject(e) &&
-          typeof e.target === 'string' &&
-          typeof e.relation === 'string',
-      )
-    : []
-  return { key: flowy.key, edges }
+  const key = parsed[FLOWY_KEY_FIELD]
+  return typeof key === 'string' ? key : null
 }
 
-/** Strip the reserved `__flowy` namespace, returning only user metadata (or undefined). */
-export function stripFlowyMeta(
+/** Strip the reserved client-key field, returning only user metadata (or undefined). */
+export function stripClientKey(
   metadata: string | null | undefined,
 ): Record<string, unknown> | undefined {
   if (!metadata) return undefined
@@ -94,8 +83,16 @@ export function stripFlowyMeta(
     return undefined
   }
   if (!isObject(parsed)) return undefined
-  const { [FLOWY_META_KEY]: _flowy, ...rest } = parsed
+  const { [FLOWY_KEY_FIELD]: _key, ...rest } = parsed
   return Object.keys(rest).length > 0 ? rest : undefined
+}
+
+/** Build the metadata JSON string for a node: user metadata plus the client-key. */
+export function buildNodeMetadata(
+  key: string,
+  userMetadata?: Record<string, unknown>,
+): string {
+  return JSON.stringify({ ...(userMetadata ?? {}), [FLOWY_KEY_FIELD]: key })
 }
 
 function fail(message: string): never {

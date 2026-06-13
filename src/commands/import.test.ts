@@ -13,7 +13,7 @@ vi.mock('node:fs', () => ({
   readFileSync: vi.fn(),
 }))
 
-const FLOWY_KEY = '__flowy'
+const FLOWY_KEY_FIELD = '__flowyKey'
 
 /** A small representative backlog: 1 project, 1 feature, 2 tasks, 1 blocks edge. */
 const MANIFEST = {
@@ -49,6 +49,31 @@ describe('import command', () => {
     expect(importCommand.name()).toBe('import')
   })
 
+  test('metadata carries only the client-key, never edge data', async () => {
+    const { graphql } = await import('../util/client.ts')
+    const { readFileSync } = await import('node:fs')
+    const { importCommand } = await import('./import.ts')
+
+    vi.mocked(readFileSync).mockReturnValue(JSON.stringify(MANIFEST))
+    vi.mocked(graphql).mockImplementation(async (query: string) => {
+      if (query.includes('nodes(')) return { nodes: [] }
+      if (query.includes('createNode')) return { createNode: { id: 'srv_x' } }
+      if (query.includes('createEdge')) return { createEdge: {} }
+      return {}
+    })
+
+    await importCommand.parseAsync(['manifest.json'], { from: 'user' })
+
+    for (const [q, vars] of vi.mocked(graphql).mock.calls) {
+      if (!q.includes('createNode')) continue
+      const meta = metaOf(vars ?? {})
+      expect(typeof meta[FLOWY_KEY_FIELD]).toBe('string')
+      // The dropped edge-stamp hack must not reappear in any form.
+      expect(meta.__flowy).toBeUndefined()
+      expect(meta.edges).toBeUndefined()
+    }
+  })
+
   test('first run: creates every node and edge, returns a key→id map', async () => {
     const { graphql } = await import('../util/client.ts')
     const { output } = await import('../util/format.ts')
@@ -62,13 +87,17 @@ describe('import command', () => {
       async (query: string, variables?: Record<string, unknown>) => {
         if (query.includes('nodes(')) return { nodes: [] }
         if (query.includes('createNode')) {
-          const key = metaOf(variables ?? {})[FLOWY_KEY] as {
-            key: string
-          }
-          return { createNode: { id: `srv_${key.key}` } }
+          const key = metaOf(variables ?? {})[FLOWY_KEY_FIELD] as string
+          return { createNode: { id: `srv_${key}` } }
         }
         if (query.includes('updateNode')) {
           return { updateNode: { id: variables?.id } }
+        }
+        // No pre-existing nodes → the existing-edges query should never run.
+        if (query.includes('edges(')) {
+          throw new Error(
+            'edges() should not be queried with no existing nodes',
+          )
         }
         if (query.includes('createEdge')) return { createEdge: {} }
         return {}
@@ -108,27 +137,33 @@ describe('import command', () => {
 
     vi.mocked(readFileSync).mockReturnValue(JSON.stringify(MANIFEST))
 
-    // Every manifest node already exists, each carrying its client-key and the
-    // edges recorded on the first import (so edges are also already present).
+    // Every manifest node already exists (carrying its client-key), and every
+    // edge already exists in the real edge model.
     const existing = (type: string) => {
       const byType: Record<string, Array<Record<string, unknown>>> = {
         project: [node('proj', 'srv_proj')],
-        feature: [node('feat-1', 'srv_feat-1', [['proj', 'part_of']])],
-        task: [
-          node('task-1', 'srv_task-1', [['feat-1', 'part_of']]),
-          node('task-2', 'srv_task-2', [
-            ['feat-1', 'part_of'],
-            ['task-1', 'blocks'],
-          ]),
-        ],
+        feature: [node('feat-1', 'srv_feat-1')],
+        task: [node('task-1', 'srv_task-1'), node('task-2', 'srv_task-2')],
       }
       return byType[type] ?? []
     }
+    const edgesOf = (nodeId: string, relation: string) =>
+      EDGES.filter((e) => e.source === nodeId && e.relation === relation).map(
+        (e) => ({ id: e.target }),
+      )
 
     vi.mocked(graphql).mockImplementation(
       async (query: string, variables?: Record<string, unknown>) => {
         if (query.includes('nodes(')) {
           return { nodes: existing(variables?.type as string) }
+        }
+        if (query.includes('edges(')) {
+          return {
+            edges: edgesOf(
+              variables?.nodeId as string,
+              variables?.relation as string,
+            ),
+          }
         }
         if (query.includes('updateNode')) {
           return { updateNode: { id: variables?.id } }
@@ -152,35 +187,44 @@ describe('import command', () => {
     expect(created).toHaveLength(0)
     expect(updated).toHaveLength(4)
 
-    // Every edge already exists (recorded in metadata) → none re-created.
+    // Every edge already exists in the edge model → none re-created.
     expect(edges).toHaveLength(0)
   })
 
-  test('does not re-create an edge that already exists server-side', async () => {
+  test('does not re-create an edge that already exists in the edge model', async () => {
     const { graphql } = await import('../util/client.ts')
     const { readFileSync } = await import('node:fs')
     const { importCommand } = await import('./import.ts')
 
     vi.mocked(readFileSync).mockReturnValue(JSON.stringify(MANIFEST))
 
-    // Nodes exist but only the part_of edges were recorded; the blocks edge
-    // was not — so exactly that one edge should be (re)created.
     const existing = (type: string) => {
       const byType: Record<string, Array<Record<string, unknown>>> = {
         project: [node('proj', 'srv_proj')],
-        feature: [node('feat-1', 'srv_feat-1', [['proj', 'part_of']])],
-        task: [
-          node('task-1', 'srv_task-1', [['feat-1', 'part_of']]),
-          node('task-2', 'srv_task-2', [['feat-1', 'part_of']]),
-        ],
+        feature: [node('feat-1', 'srv_feat-1')],
+        task: [node('task-1', 'srv_task-1'), node('task-2', 'srv_task-2')],
       }
       return byType[type] ?? []
     }
+    // Only the part_of edges exist server-side; the blocks edge does not.
+    const present = EDGES.filter((e) => e.relation === 'part_of')
+    const edgesOf = (nodeId: string, relation: string) =>
+      present
+        .filter((e) => e.source === nodeId && e.relation === relation)
+        .map((e) => ({ id: e.target }))
 
     vi.mocked(graphql).mockImplementation(
       async (query: string, variables?: Record<string, unknown>) => {
         if (query.includes('nodes(')) {
           return { nodes: existing(variables?.type as string) }
+        }
+        if (query.includes('edges(')) {
+          return {
+            edges: edgesOf(
+              variables?.nodeId as string,
+              variables?.relation as string,
+            ),
+          }
         }
         if (query.includes('updateNode')) {
           return { updateNode: { id: variables?.id } }
@@ -220,25 +264,24 @@ describe('import command', () => {
   })
 })
 
+/** The full edge set this manifest implies, expressed in SERVER ids. */
+const EDGES = [
+  { source: 'srv_feat-1', target: 'srv_proj', relation: 'part_of' },
+  { source: 'srv_task-1', target: 'srv_feat-1', relation: 'part_of' },
+  { source: 'srv_task-2', target: 'srv_feat-1', relation: 'part_of' },
+  { source: 'srv_task-2', target: 'srv_task-1', relation: 'blocks' },
+]
+
 /**
- * Build a server node row with an embedded `__flowy` key + recorded edges.
- * Edge tuples are `[targetClientKey, relation]` — the same client-key space
- * the manifest uses, so the dedup path can match without id translation.
+ * Build an existing server node row stamped with its client-key only.
+ * Edges are NOT stored in metadata — they live in the real edge model and are
+ * mocked separately via the `edges()` query.
  */
-function node(
-  key: string,
-  id: string,
-  edges: Array<[string, string]> = [],
-): Record<string, unknown> {
+function node(key: string, id: string): Record<string, unknown> {
   return {
     id,
     type: 'x',
     title: key,
-    metadata: JSON.stringify({
-      [FLOWY_KEY]: {
-        key,
-        edges: edges.map(([target, relation]) => ({ target, relation })),
-      },
-    }),
+    metadata: JSON.stringify({ [FLOWY_KEY_FIELD]: key }),
   }
 }
