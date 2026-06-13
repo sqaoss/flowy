@@ -1,5 +1,20 @@
+import { createGraphQLError } from 'graphql-yoga'
 import { nanoid } from 'nanoid'
 import type { FlowyDb } from './db.ts'
+
+function validationError(message: string) {
+  return createGraphQLError(message, {
+    extensions: { code: 'VALIDATION_ERROR' },
+  })
+}
+
+function notFoundError(message: string) {
+  return createGraphQLError(message, { extensions: { code: 'NOT_FOUND' } })
+}
+
+function conflictError(message: string) {
+  return createGraphQLError(message, { extensions: { code: 'CONFLICT' } })
+}
 
 type Db = FlowyDb
 
@@ -163,7 +178,7 @@ export function createResolvers(db: Db) {
         },
       ) => {
         if (args.query.trim().length < 3) {
-          throw new Error('Search query must be at least 3 characters')
+          throw validationError('Search query must be at least 3 characters')
         }
         const escaped = args.query.replace(/[%_\\]/g, '\\$&')
         const conditions = [
@@ -193,9 +208,9 @@ export function createResolvers(db: Db) {
         _: unknown,
         args: { type: string; title: string; description?: string },
       ): NodeGql => {
-        if (!args.title.trim()) throw new Error('Title is required')
+        if (!args.title.trim()) throw validationError('Title is required')
         if (args.description != null && !args.description.trim()) {
-          throw new Error('Description cannot be empty')
+          throw validationError('Description cannot be empty')
         }
         const id = generateId(args.type)
         const now = new Date().toISOString()
@@ -220,10 +235,10 @@ export function createResolvers(db: Db) {
         const existing = db.raw
           .query('SELECT * FROM nodes WHERE id = ?')
           .get(args.id) as NodeRow | null
-        if (!existing) throw new Error(`Node ${args.id} not found`)
+        if (!existing) throw notFoundError(`Node ${args.id} not found`)
         const newStatus = args.status ?? existing.status
         if (args.status && !VALID_STATUSES.has(args.status)) {
-          throw new Error(
+          throw validationError(
             `Invalid status: ${args.status}. Must be one of: ${[...VALID_STATUSES].join(', ')}`,
           )
         }
@@ -240,9 +255,9 @@ export function createResolvers(db: Db) {
         const existing = db.raw
           .query('SELECT * FROM nodes WHERE id = ?')
           .get(args.id) as NodeRow | null
-        if (!existing) throw new Error(`Node ${args.id} not found`)
+        if (!existing) throw notFoundError(`Node ${args.id} not found`)
         if (existing.status !== 'pending_review') {
-          throw new Error(
+          throw conflictError(
             `Cannot approve node with status "${existing.status}", must be "pending_review"`,
           )
         }
@@ -261,7 +276,7 @@ export function createResolvers(db: Db) {
       ) => {
         const validRelations = new Set(['part_of', 'blocks'])
         if (!validRelations.has(args.relation)) {
-          throw new Error(
+          throw validationError(
             `Invalid relation: ${args.relation}. Must be 'part_of' or 'blocks'`,
           )
         }
@@ -269,16 +284,16 @@ export function createResolvers(db: Db) {
           .query('SELECT id FROM nodes WHERE id = ?')
           .get(args.sourceId)
         if (!sourceExists) {
-          throw new Error(`Source node ${args.sourceId} not found`)
+          throw notFoundError(`Source node ${args.sourceId} not found`)
         }
         const targetExists = db.raw
           .query('SELECT id FROM nodes WHERE id = ?')
           .get(args.targetId)
         if (!targetExists) {
-          throw new Error(`Target node ${args.targetId} not found`)
+          throw notFoundError(`Target node ${args.targetId} not found`)
         }
         if (args.relation === 'blocks' && args.sourceId === args.targetId) {
-          throw new Error('A node cannot block itself')
+          throw validationError('A node cannot block itself')
         }
         const now = new Date().toISOString()
         db.raw.run(

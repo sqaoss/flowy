@@ -31,6 +31,31 @@ describe('graphql client', () => {
     expect(result).toEqual({ whoami: { id: '1' } })
   })
 
+  test('attaches extensions.code to the thrown error', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        json: () =>
+          Promise.resolve({
+            errors: [
+              {
+                message: 'Search query must be at least 3 characters',
+                extensions: { code: 'VALIDATION_ERROR' },
+              },
+            ],
+          }),
+      }),
+    )
+
+    const { graphql } = await import('./client.ts')
+    await expect(
+      graphql('query { search(query: "ab") { id } }'),
+    ).rejects.toMatchObject({
+      message: 'Search query must be at least 3 characters',
+      code: 'VALIDATION_ERROR',
+    })
+  })
+
   test('throws original server message for unknown error codes', async () => {
     vi.stubGlobal(
       'fetch',
