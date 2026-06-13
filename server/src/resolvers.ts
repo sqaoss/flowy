@@ -194,6 +194,74 @@ export function createResolvers(db: Db) {
         return selectNodes(rows)
       },
 
+      // Nodes connected to `nodeId` by `relation`, following edges in the given
+      // direction. 'incoming' returns the *sources* of edges that point at the
+      // node (e.g. for relation 'blocks', the tasks that block it — blockedBy);
+      // 'outgoing' returns the *targets* of edges originating at the node (the
+      // tasks it blocks). Default direction is 'outgoing'.
+      edges: (
+        _: unknown,
+        args: {
+          nodeId: string
+          relation: string
+          direction?: string
+        },
+      ) => {
+        const incoming = args.direction === 'incoming'
+        const sql = incoming
+          ? `SELECT ${prefixedCols()} FROM nodes n
+             JOIN edges e ON n.id = e.source_id
+             WHERE e.target_id = ? AND e.relation = ?`
+          : `SELECT ${prefixedCols()} FROM nodes n
+             JOIN edges e ON n.id = e.target_id
+             WHERE e.source_id = ? AND e.relation = ?`
+        const rows = db.raw
+          .query(sql)
+          .all(args.nodeId, args.relation) as NodeRow[]
+        return selectNodes(rows)
+      },
+
+      // Tasks that are actionable now: type 'task', status not done/cancelled,
+      // and not blocked by any incomplete blocker. A blocker is an incoming
+      // `blocks` edge whose source task is itself not done/cancelled. Optionally
+      // scoped to a project via the `part_of` hierarchy (task -> feature ->
+      // project).
+      readyTasks: (_: unknown, args: { projectId?: string }) => {
+        const params: string[] = []
+        let scope = ''
+        if (args.projectId) {
+          // Restrict to tasks reachable from the project through part_of edges
+          // (any depth). Edges point child -> parent, so we walk upward from
+          // each candidate task to see if the project is an ancestor.
+          scope = `AND n.id IN (
+            WITH RECURSIVE up(id) AS (
+              SELECT source_id FROM edges
+                WHERE target_id = ?1 AND relation = 'part_of'
+              UNION
+              SELECT e.source_id FROM edges e
+                JOIN up ON e.target_id = up.id AND e.relation = 'part_of'
+            )
+            SELECT id FROM up
+          )`
+          params.push(args.projectId)
+        }
+        const rows = db.raw
+          .query(
+            `SELECT ${prefixedCols()} FROM nodes n
+             WHERE n.type = 'task'
+               AND n.status NOT IN ('done', 'cancelled')
+               ${scope}
+               AND NOT EXISTS (
+                 SELECT 1 FROM edges b
+                 JOIN nodes src ON src.id = b.source_id
+                 WHERE b.target_id = n.id AND b.relation = 'blocks'
+                   AND src.status NOT IN ('done', 'cancelled')
+               )`,
+          )
+          .all(...params) as NodeRow[]
+        return selectNodes(rows)
+      },
+
       search: (
         _: unknown,
         args: {

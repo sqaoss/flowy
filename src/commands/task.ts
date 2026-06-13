@@ -1,6 +1,6 @@
 import { Command } from 'commander'
 import { graphql } from '../util/client.ts'
-import { requireFeature } from '../util/config.ts'
+import { requireFeature, resolveProject } from '../util/config.ts'
 import { resolveDescription } from '../util/description.ts'
 import { output, outputError } from '../util/format.ts'
 
@@ -53,8 +53,45 @@ taskCommand
 taskCommand
   .command('list')
   .description('List tasks in the active feature')
-  .action(async () => {
+  .option(
+    '--ready',
+    'Only actionable tasks: not done/cancelled and with zero unfinished blockers',
+  )
+  .option('--all', 'List every task across the whole backlog')
+  .option(
+    '--project <id>',
+    'Scope --ready/--all to a project (defaults to the active project)',
+  )
+  .action(async (opts) => {
     try {
+      if (opts.ready) {
+        const projectId =
+          opts.project ?? (opts.all ? undefined : resolveProject()?.id)
+        const data = await graphql<{ readyTasks: unknown[] }>(
+          `query ReadyTasks($projectId: String) {
+            readyTasks(projectId: $projectId) {
+              id type title status createdAt
+            }
+          }`,
+          { projectId: projectId ?? null },
+        )
+        output(data.readyTasks)
+        return
+      }
+
+      if (opts.all) {
+        const data = await graphql<{ nodes: unknown[] }>(
+          `query AllTasks($type: String!) {
+            nodes(type: $type) {
+              id type title status createdAt
+            }
+          }`,
+          { type: 'task' },
+        )
+        output(data.nodes)
+        return
+      }
+
       const featureId = requireFeature()
       const data = await graphql<{ descendants: unknown[] }>(
         `query ListTasks($nodeId: String!, $relation: String!, $maxDepth: Int) {
@@ -75,19 +112,33 @@ taskCommand
 
 taskCommand
   .command('show')
-  .description('Show task details')
+  .description('Show task details, including its blockedBy/blocks dependencies')
   .argument('<id>', 'Task ID')
   .action(async (id: string) => {
     try {
-      const data = await graphql<{ node: unknown }>(
+      const data = await graphql<{
+        node: Record<string, unknown>
+        blockedBy: unknown[]
+        blocks: unknown[]
+      }>(
         `query ShowTask($id: String!) {
           node(id: $id) {
             id type title description status metadata createdAt updatedAt
           }
+          blockedBy: edges(nodeId: $id, relation: "blocks", direction: "incoming") {
+            id type title status
+          }
+          blocks: edges(nodeId: $id, relation: "blocks", direction: "outgoing") {
+            id type title status
+          }
         }`,
         { id },
       )
-      output(data.node)
+      output({
+        ...data.node,
+        blockedBy: data.blockedBy,
+        blocks: data.blocks,
+      })
     } catch (error) {
       outputError(error)
     }
@@ -185,6 +236,29 @@ taskCommand
         { sourceId: id1, targetId: id2, relation: 'blocks' },
       )
       output({ removed: data.removeEdge })
+    } catch (error) {
+      outputError(error)
+    }
+  })
+
+taskCommand
+  .command('deps')
+  .description('List a task’s dependencies: what blocks it and what it blocks')
+  .argument('<id>', 'Task ID')
+  .action(async (id: string) => {
+    try {
+      const data = await graphql<{ blockedBy: unknown[]; blocks: unknown[] }>(
+        `query TaskDeps($id: String!) {
+          blockedBy: edges(nodeId: $id, relation: "blocks", direction: "incoming") {
+            id type title status
+          }
+          blocks: edges(nodeId: $id, relation: "blocks", direction: "outgoing") {
+            id type title status
+          }
+        }`,
+        { id },
+      )
+      output({ id, blockedBy: data.blockedBy, blocks: data.blocks })
     } catch (error) {
       outputError(error)
     }
