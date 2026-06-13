@@ -1,6 +1,6 @@
 import { Command } from 'commander'
 import { graphql } from '../util/client.ts'
-import { loadConfig, saveConfig } from '../util/config.ts'
+import { fingerprintKey, loadConfig, saveConfig } from '../util/config.ts'
 import { output, outputError } from '../util/format.ts'
 import { ROTATE_API_KEY } from '../util/operations.ts'
 
@@ -9,7 +9,11 @@ export const keyCommand = new Command('key').description('API key management')
 keyCommand
   .command('rotate')
   .description('Rotate API key')
-  .action(async () => {
+  .option(
+    '--show-key',
+    'Print the full API key instead of a non-reversible fingerprint',
+  )
+  .action(async (opts) => {
     try {
       const data = await graphql<{
         rotateApiKey: {
@@ -24,11 +28,17 @@ keyCommand
         }
       }>(ROTATE_API_KEY)
 
+      const { user, apiKey } = data.rotateApiKey
       const config = loadConfig()
-      config.apiKey = data.rotateApiKey.apiKey
+      config.apiKey = apiKey
       saveConfig(config)
 
-      output(data.rotateApiKey)
+      // Default output never leaks the secret; --show-key opts in (F35).
+      output(
+        opts.showKey
+          ? { user, apiKey }
+          : { user, keyFingerprint: fingerprintKey(apiKey) },
+      )
     } catch (error) {
       outputError(error)
     }

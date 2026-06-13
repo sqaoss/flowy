@@ -189,6 +189,20 @@ The self-hosted server supports the full planning workflow — `init`, `project`
 
 All commands output JSON to stdout; errors go to stderr as `{ "error": "message" }`.
 
+## GraphQL API
+
+The CLI is a thin client over a GraphQL API. To integrate directly — or to
+understand what the CLI sends — see the API reference for the bundled local
+server:
+
+- **[docs/API.md](docs/API.md)** — schema, example queries/mutations,
+  error-code catalogue (with CLI exit codes), and limits.
+- **[docs/api/schema.graphql](docs/api/schema.graphql)** — the full SDL,
+  regenerable with `bun run sdl`.
+
+The hosted service at `flowy-ai.fly.dev` exposes a superset of this schema plus
+account/billing operations; its API is documented separately.
+
 ## Configuration
 
 Config is stored at `~/.config/flowy/config.json`. These environment variables override config:

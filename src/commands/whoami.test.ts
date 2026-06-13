@@ -3,10 +3,18 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 let mockGraphql: ReturnType<typeof vi.fn>
 let mockOutput: ReturnType<typeof vi.fn>
 let mockOutputError: ReturnType<typeof vi.fn>
+let mockLoadConfig: ReturnType<typeof vi.fn>
 
 beforeEach(() => {
   mockOutput = vi.fn()
   mockOutputError = vi.fn()
+  mockLoadConfig = vi.fn(() => ({
+    mode: 'saas',
+    apiUrl: 'https://flowy-ai.fly.dev/graphql',
+    apiKey: 'flowy_secret_abcdef0123456789',
+    client: { name: '' },
+    projects: {},
+  }))
   mockGraphql = vi.fn().mockResolvedValue({
     whoami: {
       id: 'user_1',
@@ -25,6 +33,17 @@ beforeEach(() => {
   vi.doMock('../util/client.ts', () => ({
     graphql: mockGraphql,
   }))
+
+  vi.doMock('../util/config.ts', async () => {
+    const actual =
+      await vi.importActual<typeof import('../util/config.ts')>(
+        '../util/config.ts',
+      )
+    return {
+      loadConfig: mockLoadConfig,
+      fingerprintKey: actual.fingerprintKey,
+    }
+  })
 })
 
 afterEach(() => {
@@ -33,7 +52,7 @@ afterEach(() => {
 })
 
 describe('whoami command', () => {
-  test('whoami outputs user data from query', async () => {
+  test('whoami outputs user data plus a non-reversible key fingerprint', async () => {
     const userData = {
       id: '1',
       email: 'a@b.com',
@@ -46,7 +65,17 @@ describe('whoami command', () => {
     const { whoamiCommand } = await import('./whoami.ts')
     await whoamiCommand.parseAsync([], { from: 'user' })
 
-    expect(mockOutput).toHaveBeenCalledWith(userData)
+    const outputArg = mockOutput.mock.calls[0]![0]
+    expect(outputArg).toEqual(
+      expect.objectContaining({
+        ...userData,
+        keyFingerprint: expect.stringMatching(/sha256:[0-9a-f]{12}/),
+      }),
+    )
+    // Fingerprint must not leak the configured secret.
+    expect(JSON.stringify(outputArg)).not.toContain(
+      'flowy_secret_abcdef0123456789',
+    )
   })
 
   test('whoami outputs error when query fails', async () => {

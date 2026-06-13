@@ -19,10 +19,17 @@ beforeEach(() => {
   mockOutputError = vi.fn()
   mockSpawnSync = vi.fn()
 
-  vi.doMock('../util/config.ts', () => ({
-    loadConfig: mockLoadConfig,
-    saveConfig: mockSaveConfig,
-  }))
+  vi.doMock('../util/config.ts', async () => {
+    const actual =
+      await vi.importActual<typeof import('../util/config.ts')>(
+        '../util/config.ts',
+      )
+    return {
+      loadConfig: mockLoadConfig,
+      saveConfig: mockSaveConfig,
+      fingerprintKey: actual.fingerprintKey,
+    }
+  })
 
   vi.doMock('../util/format.ts', () => ({
     output: mockOutput,
@@ -230,16 +237,50 @@ describe('setup command', () => {
         apiKey: 'flowy_test_key_123',
       }),
     )
-    expect(mockOutput).toHaveBeenCalledWith(
+    // Default output surfaces a fingerprint, never the raw secret (F35).
+    const outputArg = mockOutput.mock.calls[0]![0]
+    expect(JSON.stringify(outputArg)).not.toContain('flowy_test_key_123')
+    expect(outputArg).toEqual(
       expect.objectContaining({
         user: expect.objectContaining({
           email: 'test@example.com',
           tier: 'explorer',
           graceEndsAt: '2026-04-13T00:00:00Z',
         }),
-        apiKey: 'flowy_test_key_123',
+        keyFingerprint: expect.stringMatching(/sha256:[0-9a-f]{12}/),
         checkoutUrl: 'https://checkout.stripe.com/session_123',
       }),
+    )
+    expect(outputArg).not.toHaveProperty('apiKey')
+  })
+
+  test('setup remote --show-key reveals the full API key', async () => {
+    const mockGraphql = vi.fn().mockResolvedValue({
+      register: {
+        user: {
+          id: 'user_1',
+          email: 'test@example.com',
+          tier: 'explorer',
+          createdAt: '2026-03-30T00:00:00Z',
+          graceEndsAt: null,
+        },
+        apiKey: 'flowy_test_key_123',
+        checkoutUrl: null,
+      },
+    })
+    vi.doMock('../util/client.ts', () => ({
+      graphql: mockGraphql,
+    }))
+    mockSpawnSync.mockReturnValue({ status: 0, stdout: Buffer.from('') })
+
+    const { setupCommand } = await import('./setup.ts')
+    await setupCommand.parseAsync(
+      ['remote', '--email', 'test@example.com', '--show-key'],
+      { from: 'user' },
+    )
+
+    expect(mockOutput).toHaveBeenCalledWith(
+      expect.objectContaining({ apiKey: 'flowy_test_key_123' }),
     )
   })
 

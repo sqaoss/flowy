@@ -1,3 +1,10 @@
+# [1.7.0](https://github.com/sqaoss/flowy/compare/v1.6.1...v1.7.0) (2026-06-13)
+
+
+### Features
+
+* **security:** 0600 config perms + API key fingerprint (F35) ([#34](https://github.com/sqaoss/flowy/issues/34)) ([5091bce](https://github.com/sqaoss/flowy/commit/5091bce191f0ed7b3d61176b0e1bac288da0e344))
+
 ## [1.6.1](https://github.com/sqaoss/flowy/compare/v1.6.0...v1.6.1) (2026-06-13)
 
 
