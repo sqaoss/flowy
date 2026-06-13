@@ -3,6 +3,14 @@ import { graphql } from '../util/client.ts'
 import { loadConfig, requireProject, saveConfig } from '../util/config.ts'
 import { resolveDescription } from '../util/description.ts'
 import { output, outputError } from '../util/format.ts'
+import {
+  CREATE_PROJECT,
+  DELETE_NODE,
+  GET_PROJECT,
+  LIST_PROJECTS,
+  LIST_PROJECTS_FOR_SET,
+  UPDATE_NODE,
+} from '../util/operations.ts'
 
 export const projectCommand = new Command('project').description(
   'Manage projects',
@@ -14,14 +22,10 @@ projectCommand
   .argument('<name>', 'Project name')
   .action(async (name: string) => {
     try {
-      const data = await graphql<{ createNode: unknown }>(
-        `mutation CreateProject($type: String!, $title: String!) {
-          createNode(type: $type, title: $title) {
-            id type title description status metadata createdAt updatedAt
-          }
-        }`,
-        { type: 'project', title: name },
-      )
+      const data = await graphql<{ createNode: unknown }>(CREATE_PROJECT, {
+        type: 'project',
+        title: name,
+      })
       output(data.createNode)
     } catch (error) {
       outputError(error)
@@ -44,14 +48,7 @@ projectCommand
     try {
       const data = await graphql<{
         nodes: Array<{ id: string; title: string }>
-      }>(
-        `query ListProjects($type: String) {
-          nodes(type: $type) {
-            id title
-          }
-        }`,
-        { type: 'project' },
-      )
+      }>(LIST_PROJECTS_FOR_SET, { type: 'project' })
       const project = data.nodes.find((n) => n.title === name)
       if (!project) {
         throw new Error(`Project "${name}" not found.`)
@@ -67,14 +64,9 @@ projectCommand
   .description('List all projects')
   .action(async () => {
     try {
-      const data = await graphql<{ nodes: unknown[] }>(
-        `query ListProjects($type: String) {
-          nodes(type: $type) {
-            id type title description status createdAt updatedAt
-          }
-        }`,
-        { type: 'project' },
-      )
+      const data = await graphql<{ nodes: unknown[] }>(LIST_PROJECTS, {
+        type: 'project',
+      })
       output(data.nodes)
     } catch (error) {
       outputError(error)
@@ -84,14 +76,9 @@ projectCommand
 export async function showProject(id?: string): Promise<void> {
   try {
     const projectId = id ?? requireProject().id
-    const data = await graphql<{ node: unknown }>(
-      `query GetProject($id: String!) {
-        node(id: $id) {
-          id type title description status metadata createdAt updatedAt
-        }
-      }`,
-      { id: projectId },
-    )
+    const data = await graphql<{ node: unknown }>(GET_PROJECT, {
+      id: projectId,
+    })
     output(data.node)
   } catch (error) {
     outputError(error)
@@ -131,11 +118,7 @@ projectCommand
       }
       if (opts.metadata != null) variables.metadata = opts.metadata
       const data = await graphql<{ updateNode: unknown }>(
-        `mutation UpdateNode($id: String!, $title: String, $description: String, $metadata: String) {
-          updateNode(id: $id, title: $title, description: $description, metadata: $metadata) {
-            id type title description status metadata createdAt updatedAt
-          }
-        }`,
+        UPDATE_NODE,
         variables,
       )
       output(data.updateNode)
@@ -151,12 +134,9 @@ projectCommand
   .action(async (id?: string) => {
     try {
       const projectId = id ?? requireProject().id
-      const data = await graphql<{ deleteNode: boolean }>(
-        `mutation DeleteNode($id: String!) {
-          deleteNode(id: $id)
-        }`,
-        { id: projectId },
-      )
+      const data = await graphql<{ deleteNode: boolean }>(DELETE_NODE, {
+        id: projectId,
+      })
       output({ deleted: data.deleteNode })
     } catch (error) {
       outputError(error)

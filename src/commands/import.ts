@@ -9,6 +9,13 @@ import {
   parseManifest,
   readClientKey,
 } from '../util/manifest.ts'
+import {
+  IMPORT_CREATE,
+  IMPORT_EDGE,
+  IMPORT_EDGES,
+  IMPORT_EXISTING,
+  IMPORT_UPDATE,
+} from '../util/operations.ts'
 
 const NODE_TYPES = ['project', 'feature', 'task'] as const
 
@@ -53,12 +60,9 @@ function desiredEdges(manifest: Manifest): DesiredEdge[] {
 async function loadExisting(): Promise<Map<string, string>> {
   const idByKey = new Map<string, string>()
   for (const type of NODE_TYPES) {
-    const data = await graphql<{ nodes: ServerNode[] }>(
-      `query ImportExisting($type: String) {
-        nodes(type: $type) { id type title metadata }
-      }`,
-      { type },
-    )
+    const data = await graphql<{ nodes: ServerNode[] }>(IMPORT_EXISTING, {
+      type,
+    })
     for (const node of data.nodes) {
       const key = readClientKey(node.metadata)
       if (key) idByKey.set(key, node.id)
@@ -78,9 +82,7 @@ async function loadExistingEdges(nodeIds: string[]): Promise<Set<string>> {
   for (const nodeId of nodeIds) {
     for (const relation of RELATIONS) {
       const data = await graphql<{ edges: Array<{ id: string }> }>(
-        `query ImportEdges($nodeId: String!, $relation: String!) {
-          edges(nodeId: $nodeId, relation: $relation, direction: "outgoing") { id }
-        }`,
+        IMPORT_EDGES,
         { nodeId, relation },
       )
       for (const target of data.edges) {
@@ -91,25 +93,13 @@ async function loadExistingEdges(nodeIds: string[]): Promise<Set<string>> {
   return existing
 }
 
-const CREATE_NODE = `mutation ImportCreate($type: String!, $title: String!, $description: String, $status: String, $metadata: String) {
-  createNode(type: $type, title: $title, description: $description, status: $status, metadata: $metadata) { id }
-}`
-
-const UPDATE_NODE = `mutation ImportUpdate($id: String!, $title: String, $description: String, $status: String, $metadata: String) {
-  updateNode(id: $id, title: $title, description: $description, status: $status, metadata: $metadata) { id }
-}`
-
-const CREATE_EDGE = `mutation ImportEdge($sourceId: String!, $targetId: String!, $relation: String!) {
-  createEdge(sourceId: $sourceId, targetId: $targetId, relation: $relation) { sourceId targetId relation }
-}`
-
 async function upsertNode(
   node: ManifestNode,
   existingId: string | undefined,
 ): Promise<string> {
   const metadata = buildNodeMetadata(node.key, node.metadata)
   if (existingId) {
-    await graphql<{ updateNode: { id: string } }>(UPDATE_NODE, {
+    await graphql<{ updateNode: { id: string } }>(IMPORT_UPDATE, {
       id: existingId,
       title: node.title,
       description: node.description ?? null,
@@ -118,7 +108,7 @@ async function upsertNode(
     })
     return existingId
   }
-  const data = await graphql<{ createNode: { id: string } }>(CREATE_NODE, {
+  const data = await graphql<{ createNode: { id: string } }>(IMPORT_CREATE, {
     type: node.type,
     title: node.title,
     description: node.description ?? null,
@@ -162,7 +152,7 @@ export const importCommand = new Command('import')
         const targetId = idByKey.get(edge.targetKey)
         if (!sourceId || !targetId) continue
         if (present.has(edgeKey(sourceId, targetId, edge.relation))) continue
-        await graphql(CREATE_EDGE, {
+        await graphql(IMPORT_EDGE, {
           sourceId,
           targetId,
           relation: edge.relation,

@@ -1,6 +1,7 @@
 import { Command } from 'commander'
 import { graphql } from '../util/client.ts'
 import { output, outputError } from '../util/format.ts'
+import { UPDATE_STATUS } from '../util/operations.ts'
 
 export const statusCommand = new Command('status')
   .description('Update a node status (shorthand)')
@@ -11,14 +12,10 @@ export const statusCommand = new Command('status')
   )
   .action(async (id: string, status: string) => {
     try {
-      const data = await graphql<{ updateNode: unknown }>(
-        `mutation UpdateStatus($id: String!, $status: String) {
-          updateNode(id: $id, status: $status) {
-            id type title status updatedAt
-          }
-        }`,
-        { id, status },
-      )
+      const data = await graphql<{ updateNode: unknown }>(UPDATE_STATUS, {
+        id,
+        status,
+      })
       output(data.updateNode)
     } catch (error) {
       outputError(error)
