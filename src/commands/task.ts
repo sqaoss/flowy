@@ -12,14 +12,21 @@ taskCommand
   .command('create')
   .description('Create a task in the active feature')
   .requiredOption('--title <title>', 'Task title')
-  .requiredOption(
-    '--description <desc>',
-    'Task description (text or file path)',
+  .option(
+    '--description <text>',
+    'Task description, used verbatim (never read as a file path)',
+  )
+  .option(
+    '--description-file <path>',
+    'Read the task description from a file, or "-" for stdin',
   )
   .action(async (opts) => {
     try {
       const featureId = requireFeature()
-      const description = await resolveDescription(opts.description)
+      const description = await resolveDescription({
+        description: opts.description,
+        descriptionFile: opts.descriptionFile,
+      })
       const data = await graphql<{ createNode: { id: string } }>(
         `mutation CreateTask($type: String!, $title: String!, $description: String) {
           createNode(type: $type, title: $title, description: $description) {

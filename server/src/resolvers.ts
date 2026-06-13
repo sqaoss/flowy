@@ -98,7 +98,9 @@ export function createResolvers(db: Db) {
   return {
     Query: {
       node: (_: unknown, args: { id: string }) => {
-        return selectNode(db, args.id)
+        const node = selectNode(db, args.id)
+        if (!node) throw notFoundError(`Node ${args.id} not found`)
+        return node
       },
 
       nodes: (_: unknown, args: { type?: string }) => {

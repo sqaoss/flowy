@@ -112,9 +112,17 @@ describe('createResolvers', () => {
       })
     })
 
-    it('returns null for non-existent id', () => {
-      const found = resolvers.Query.node(null, { id: 'nonexistent' })
-      expect(found).toBeNull()
+    it('throws NOT_FOUND for a non-existent id (no silent null)', () => {
+      expect(() => resolvers.Query.node(null, { id: 'nonexistent' })).toThrow(
+        'Node nonexistent not found',
+      )
+      try {
+        resolvers.Query.node(null, { id: 'nonexistent' })
+      } catch (error) {
+        expect(
+          (error as { extensions?: { code?: string } }).extensions?.code,
+        ).toBe('NOT_FOUND')
+      }
     })
   })
 

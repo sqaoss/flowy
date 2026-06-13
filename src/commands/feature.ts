@@ -16,11 +16,21 @@ featureCommand
   .command('create')
   .description('Create a feature in the active project')
   .requiredOption('--title <title>', 'Feature title')
-  .requiredOption('--description <description>', 'Feature description')
+  .option(
+    '--description <text>',
+    'Feature description, used verbatim (never read as a file path)',
+  )
+  .option(
+    '--description-file <path>',
+    'Read the feature description from a file, or "-" for stdin',
+  )
   .action(async (opts) => {
     try {
       const project = requireProject()
-      const description = await resolveDescription(opts.description)
+      const description = await resolveDescription({
+        description: opts.description,
+        descriptionFile: opts.descriptionFile,
+      })
       const nodeData = await graphql<{ createNode: { id: string } }>(
         `mutation CreateNode($type: String!, $title: String!, $description: String) {
           createNode(type: $type, title: $title, description: $description) {
