@@ -1,3 +1,10 @@
+# [1.11.0](https://github.com/sqaoss/flowy/compare/v1.10.0...v1.11.0) (2026-06-13)
+
+
+### Features
+
+* opt-in status lifecycle + search truncation marker (F32) ([#42](https://github.com/sqaoss/flowy/issues/42)) ([2ec4692](https://github.com/sqaoss/flowy/commit/2ec4692307d550bbe15935c801740e6017300564))
+
 # [1.10.0](https://github.com/sqaoss/flowy/compare/v1.9.0...v1.10.0) (2026-06-13)
 
 

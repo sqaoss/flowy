@@ -1,6 +1,6 @@
 {
   "name": "@sqaoss/flowy",
-  "version": "1.10.0",
+  "version": "1.11.0",
   "description": "Agentic persistent planning",
   "type": "module",
   "bin": {
