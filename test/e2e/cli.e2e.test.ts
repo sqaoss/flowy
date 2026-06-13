@@ -247,11 +247,29 @@ describe('CLI e2e against the bundled local server (F18)', () => {
     expect(readyAfter.map((t) => t.id)).toContain(taskId)
   })
 
-  it('tree shows the full subtree from the project root', async () => {
-    const subtree = await cli<Array<{ id: string }>>(['tree', projectId])
-    const ids = subtree.map((n) => n.id)
-    expect(ids).toContain(featureId)
-    expect(ids).toContain(taskId)
+  it('tree walks part_of by default with parentId/depth/relation (F8 shape)', async () => {
+    // Post-#38, `tree` follows `part_of` by default and annotates each node
+    // with parentId, depth (root's direct children = 1), and the edge relation.
+    interface SubtreeNode {
+      id: string
+      parentId: string
+      depth: number
+      relation: string
+    }
+    const subtree = await cli<SubtreeNode[]>(['tree', projectId], { cwd: home })
+    const byId = new Map(subtree.map((n) => [n.id, n]))
+
+    const feature = byId.get(featureId)
+    expect(feature, 'feature should appear in the subtree').toBeDefined()
+    expect(feature?.depth).toBe(1)
+    expect(feature?.parentId).toBe(projectId)
+    expect(feature?.relation).toBe('part_of')
+
+    const task = byId.get(taskId)
+    expect(task, 'task should appear in the subtree').toBeDefined()
+    expect(task?.depth).toBe(2)
+    expect(task?.parentId).toBe(featureId)
+    expect(task?.relation).toBe('part_of')
   })
 
   it('search finds nodes by text', async () => {
