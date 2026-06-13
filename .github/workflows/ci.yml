@@ -37,6 +37,22 @@ jobs:
         with:
           bun-version: latest
       - run: bun install --frozen-lockfile
+      # Root CLI unit suite (mocked transport).
       - run: bun run test
+      # Server suite — includes the P1-1 CLI/local-server contract guard.
       - run: cd server && bun install --frozen-lockfile
       - run: cd server && bunx --bun vitest run
+
+  # End-to-end smoke: boots the bundled server and drives the real CLI binary
+  # against it over HTTP (P1-6 / F18). Needs BOTH the root deps (CLI) and the
+  # server deps (graphql-yoga etc.), so install both before running.
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - run: bun install --frozen-lockfile
+      - run: cd server && bun install --frozen-lockfile
+      - run: bun run test:e2e
