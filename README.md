@@ -64,6 +64,50 @@ flowy feature create --title "User Auth"  --description-file auth-spec.md
 flowy task create --title "From stdin"    --description-file -      # reads stdin
 ```
 
+### Dependencies and ready work
+
+Tasks can block one another. Mark a dependency, inspect it, and ask for only the tasks that are actually actionable right now:
+
+```bash
+flowy task block <blocker-id> <blocked-id>   # blocker must finish before blocked
+flowy task deps <id>                          # what blocks this task, and what it blocks
+flowy task show <id>                          # task details, now including blockedBy/blocks
+
+flowy task list --ready                        # only unblocked, not-done tasks (active project)
+flowy task list --ready --project <project-id> # ...scoped to a specific project
+flowy task list --all                          # every task across the whole backlog
+```
+
+`--ready` returns tasks that are not `done`/`cancelled` and have zero unfinished blockers — the work an agent can pick up next.
+
+### Import and export
+
+Move a whole backlog in or out as a single JSON manifest. Import is **idempotent**: each node carries a stable `key` (a client-key), so re-importing updates the matching nodes in place instead of duplicating them. Edges (`part_of`, `blocks`) round-trip through the real edge model, so a `block` you created by hand is captured on export and not re-created on the next import.
+
+```bash
+flowy export                 # print the active project's manifest to stdout
+flowy export backlog.json    # ...or write it to a file
+flowy import backlog.json    # ingest a manifest (create new, update existing by key)
+```
+
+A manifest looks like:
+
+```json
+{
+  "version": 1,
+  "nodes": [
+    { "key": "proj", "type": "project", "title": "My Project" },
+    { "key": "auth", "type": "feature", "title": "User Auth", "parent": "proj" },
+    { "key": "oauth", "type": "task", "title": "Implement OAuth", "parent": "auth", "status": "draft" }
+  ],
+  "edges": [
+    { "source": "oauth", "target": "auth", "relation": "part_of" }
+  ]
+}
+```
+
+Each node's `parent` implies a `part_of` edge, so the simplest manifests need no explicit `edges`. `blocks` dependencies go in `edges`. The reserved `__flowyKey` metadata field stores the client-key; your own `metadata` is preserved alongside it and stripped back out on export.
+
 ## Agent Skill
 
 `flowy setup` installs an agent skill so your AI agent automatically knows every command. If that install step fails (offline, no `npx`, registry hiccup), setup prints a warning telling you to install it manually:
@@ -101,7 +145,7 @@ flowy serve                  # bind 127.0.0.1:4000, store data in ./flowy.sqlite
 flowy serve --port 5000 --host 0.0.0.0 --db ~/flowy.sqlite   # override defaults
 ```
 
-The self-hosted server supports the full planning workflow — `init`, `project`/`feature`/`task` CRUD, `status`, `approve`, `search`, `tree`. Account-only commands (`whoami`, `billing`, `key`) are remote-mode features and don't apply locally.
+The self-hosted server supports the full planning workflow — `init`, `project`/`feature`/`task` CRUD, `status`, `approve`, `search`, `tree`, `task deps`, `task list --ready/--all`, and `import`/`export`. Account-only commands (`whoami`, `billing`, `key`) are remote-mode features and don't apply locally.
 
 ## Command Reference
 
@@ -126,16 +170,19 @@ The self-hosted server supports the full planning workflow — `init`, `project`
 | `feature update [<id>] [--title] [--description\|--description-file] [--metadata]` | Update a feature |
 | `feature delete [<id>]` | Delete a feature (defaults to active) |
 | `task create --title <t> [--description <text>\|--description-file <path>]` | Create task (requires active feature) |
-| `task list` | List tasks in active feature |
-| `task show <id>` | Show task details |
+| `task list [--ready] [--all] [--project <id>]` | List tasks: active feature, or `--ready`/`--all` (optionally scoped to a project) |
+| `task show <id>` | Show task details, including `blockedBy`/`blocks` |
 | `task update <id> [--title] [--description\|--description-file] [--metadata]` | Update a task |
 | `task delete <id>` | Delete a task |
 | `task block <id1> <id2>` | Mark `id1` as blocking `id2` |
 | `task unblock <id1> <id2>` | Remove a blocking relationship |
+| `task deps <id>` | Show what blocks a task and what it blocks |
 | `status <id> <status>` | Update status (shorthand) |
 | `approve <id>` | Approve (must be pending_review) |
 | `search <query> [--type] [--status] [--limit]` | Full-text search |
 | `tree <id> [--depth N]` | Show subtree from any entity |
+| `import <manifest>` | Ingest a JSON manifest of nodes + edges (idempotent by client-key) |
+| `export [output]` | Dump the active project as a manifest (stdout or file) |
 | `whoami` | Show current user (remote mode) |
 | `billing checkout --tier <tier>` | Get a checkout URL for a subscription (remote mode) |
 | `key rotate` | Revoke all API keys and issue a new one (remote mode) |

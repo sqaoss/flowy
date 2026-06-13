@@ -21,7 +21,7 @@ Flowy runs against one of two backends. Which one you're in determines which com
 | Server | A bundled server you run (`flowy serve`, SQLite, `127.0.0.1:4000`) | `flowy-ai.fly.dev` |
 | Account / API key | None | Email registration; API key stored in config |
 | Subscription | None — fully free | Data operations require an active subscription |
-| Planning workflow | Full (`init`, project/feature/task CRUD, status, approve, search, tree) | Full, same commands |
+| Planning workflow | Full (`init`, project/feature/task CRUD, status, approve, search, tree, `task deps`, `task list --ready/--all`, `import`/`export`) | Full, same commands |
 | `whoami` / `billing` / `key` | **Not available** — these hard-fail locally | Available |
 
 The planning workflow is **identical** in both modes. Only the account/billing commands differ.
@@ -127,13 +127,19 @@ flowy feature delete [<id>]                 # delete feature (defaults to active
 ```bash
 flowy task create --title "Title" --description "text"
 flowy task create --title "Title" --description-file spec.md
-flowy task list                             # list tasks in active feature
-flowy task show <id>                        # show task details
+flowy task list                             # tasks in active feature
+flowy task list --ready                     # only actionable tasks (active project)
+flowy task list --ready --project <id>      # ...scoped to a specific project
+flowy task list --all                       # every task across the whole backlog
+flowy task show <id>                        # task details, incl. blockedBy/blocks
 flowy task update <id> --title <t>          # update title/description/metadata
 flowy task delete <id>                      # delete task
 flowy task block <id1> <id2>                # mark id1 as blocking id2
 flowy task unblock <id1> <id2>              # remove a blocking relationship
+flowy task deps <id>                        # what blocks this task, and what it blocks
 ```
+
+`task list --ready` returns only tasks that are not `done`/`cancelled` and have zero unfinished blockers — the next work an agent can pick up. Without `--project` it scopes to the active project; with `--all` it spans the whole backlog. `task deps <id>` (and the `blockedBy`/`blocks` fields on `task show`) report the dependency graph built from `task block`.
 
 ### Status and Approval
 ```bash
@@ -148,6 +154,31 @@ flowy status <id> done
 flowy search "query" --type task --status draft --limit 10
 flowy tree <id> --depth 3                    # show subtree from any entity
 ```
+
+### Import and Export
+```bash
+flowy export                                 # print active project's manifest to stdout
+flowy export backlog.json                    # ...or write it to a file
+flowy import backlog.json                    # ingest a manifest (idempotent by client-key)
+```
+
+A manifest is a single JSON document describing a backlog: `nodes` (projects, features, tasks) plus dependency `edges`. Each node is addressed by a stable **client-key** (`key`), not a server id:
+
+```json
+{
+  "version": 1,
+  "nodes": [
+    { "key": "proj", "type": "project", "title": "My Project" },
+    { "key": "auth", "type": "feature", "title": "User Auth", "parent": "proj" },
+    { "key": "oauth", "type": "task", "title": "Implement OAuth", "parent": "auth", "status": "draft" }
+  ],
+  "edges": [
+    { "source": "oauth", "target": "auth", "relation": "part_of" }
+  ]
+}
+```
+
+**Idempotency:** import upserts by client-key — re-importing the same manifest updates the matching nodes in place instead of creating duplicates. The key is stored in node metadata under the reserved `__flowyKey` field (your own `metadata` is preserved alongside it and stripped back out on export). A node's `parent` implies a `part_of` edge, so simple manifests need no explicit `edges`; `blocks` dependencies are listed in `edges`. Edges live in the real edge model (`createEdge` / `Query.edges`), so a `blocks` edge created by hand with `task block` is captured on export and never re-created on the next import. Works in both local and remote modes.
 
 ### Remote-only (hosted mode)
 These hit account/billing resolvers that do **not** exist on the local server; they fail in local mode.
