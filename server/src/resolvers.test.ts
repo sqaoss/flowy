@@ -1415,4 +1415,144 @@ describe('createResolvers', () => {
       ).toEqual([])
     })
   })
+
+  describe('audit_log — recording + Query.auditLog', () => {
+    it('records a create audit entry on createNode', () => {
+      const node = create(resolvers, { type: 'task', title: 'Audited' })
+      const log = resolvers.Query.auditLog(null, { nodeId: node.id })
+      expect(log).toHaveLength(1)
+      expect(log[0]).toMatchObject({ nodeId: node.id, action: 'create' })
+      // snapshot is a JSON string mirroring the created node
+      expect(log[0]?.snapshot).toBeTypeOf('string')
+      expect(JSON.parse(log[0]?.snapshot as string)).toMatchObject({
+        id: node.id,
+        title: 'Audited',
+      })
+    })
+
+    it('shapes entries like the SaaS auditLog field', () => {
+      const node = create(resolvers, { type: 'task', title: 'Shape' })
+      const [entry] = resolvers.Query.auditLog(null, { nodeId: node.id })
+      expect(entry).toHaveProperty('id')
+      expect(entry).toHaveProperty('nodeId')
+      expect(entry).toHaveProperty('action')
+      expect(entry).toHaveProperty('field')
+      expect(entry).toHaveProperty('oldValue')
+      expect(entry).toHaveProperty('newValue')
+      expect(entry).toHaveProperty('snapshot')
+      expect(entry).toHaveProperty('changedBy')
+      expect(entry).toHaveProperty('createdAt')
+      expect(entry?.changedBy).toBe('local')
+      expect(entry?.createdAt).toBeTypeOf('string')
+    })
+
+    it('records field-level diffs on updateNode (status_change vs update)', () => {
+      const node = create(resolvers, { type: 'task', title: 'Orig' })
+      resolvers.Mutation.updateNode(null, {
+        id: node.id,
+        title: 'Renamed',
+        status: 'in_progress',
+      })
+      const log = resolvers.Query.auditLog(null, { nodeId: node.id })
+      const actions = log.map((e) => e.action)
+      // create + a title update + a status_change
+      expect(actions).toContain('create')
+      expect(actions).toContain('update')
+      expect(actions).toContain('status_change')
+
+      const titleEntry = log.find((e) => e.field === 'title')
+      expect(titleEntry).toMatchObject({
+        action: 'update',
+        oldValue: 'Orig',
+        newValue: 'Renamed',
+      })
+      const statusEntry = log.find((e) => e.field === 'status')
+      expect(statusEntry).toMatchObject({
+        action: 'status_change',
+        oldValue: 'draft',
+        newValue: 'in_progress',
+      })
+    })
+
+    it('records an approve entry on approveNode', () => {
+      const node = create(resolvers, { type: 'task', title: 'Appr' })
+      resolvers.Mutation.updateNode(null, {
+        id: node.id,
+        status: 'pending_review',
+      })
+      resolvers.Mutation.approveNode(null, { id: node.id })
+      const log = resolvers.Query.auditLog(null, { nodeId: node.id })
+      const approve = log.find((e) => e.action === 'approve')
+      expect(approve).toMatchObject({
+        field: 'status',
+        oldValue: 'pending_review',
+        newValue: 'approved',
+      })
+    })
+
+    it('records create_edge / remove_edge against the source node', () => {
+      const blocker = create(resolvers, { type: 'task', title: 'Blocker' })
+      const blocked = create(resolvers, { type: 'task', title: 'Blocked' })
+      resolvers.Mutation.createEdge(null, {
+        sourceId: blocker.id,
+        targetId: blocked.id,
+        relation: 'blocks',
+      })
+      let log = resolvers.Query.auditLog(null, { nodeId: blocker.id })
+      const created = log.find((e) => e.action === 'create_edge')
+      expect(created).toMatchObject({
+        field: 'blocks',
+        newValue: blocked.id,
+      })
+
+      resolvers.Mutation.removeEdge(null, {
+        sourceId: blocker.id,
+        targetId: blocked.id,
+        relation: 'blocks',
+      })
+      log = resolvers.Query.auditLog(null, { nodeId: blocker.id })
+      const removed = log.find((e) => e.action === 'remove_edge')
+      expect(removed).toMatchObject({
+        field: 'blocks',
+        oldValue: blocked.id,
+      })
+    })
+
+    it('returns entries newest-first and respects limit', () => {
+      const node = create(resolvers, { type: 'task', title: 'Limit' })
+      resolvers.Mutation.updateNode(null, { id: node.id, title: 'A' })
+      resolvers.Mutation.updateNode(null, { id: node.id, title: 'B' })
+      const all = resolvers.Query.auditLog(null, { nodeId: node.id })
+      // create, then two title updates => 3 entries, newest first
+      expect(all.length).toBeGreaterThanOrEqual(3)
+      expect(all[0]?.action).not.toBe('create')
+      const limited = resolvers.Query.auditLog(null, {
+        nodeId: node.id,
+        limit: 1,
+      })
+      expect(limited).toHaveLength(1)
+    })
+
+    it('records a delete entry (node_id nulled, snapshot retained)', () => {
+      const node = create(resolvers, { type: 'task', title: 'Doomed' })
+      resolvers.Mutation.deleteNode(null, { id: node.id })
+      // node_id is set to null on delete (matching SaaS), so the row is no
+      // longer returned by auditLog(nodeId), but a delete row exists with the
+      // pre-delete snapshot.
+      const direct = db.raw
+        .query("SELECT action, snapshot FROM audit_log WHERE action = 'delete'")
+        .all() as Array<{ action: string; snapshot: string | null }>
+      expect(direct).toHaveLength(1)
+      expect(JSON.parse(direct[0]?.snapshot as string)).toMatchObject({
+        id: node.id,
+        title: 'Doomed',
+      })
+    })
+
+    it('returns [] for a node with no history', () => {
+      expect(
+        resolvers.Query.auditLog(null, { nodeId: 'task_nonexistent' }),
+      ).toEqual([])
+    })
+  })
 })

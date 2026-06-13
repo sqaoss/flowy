@@ -30,6 +30,9 @@ vi.mock('./commands/task.ts', () => ({
 vi.mock('./commands/tree.ts', () => ({
   treeCommand: { name: () => 'tree' },
 }))
+vi.mock('./commands/history.ts', () => ({
+  historyCommand: { name: () => 'history' },
+}))
 vi.mock('./commands/whoami.ts', () => ({
   whoamiCommand: { name: () => 'whoami' },
 }))
@@ -95,5 +98,18 @@ describe('index.ts command registration', () => {
     )
     expect(indexSource).toContain('program.addCommand(importCommand)')
     expect(indexSource).toContain('program.addCommand(exportCommand)')
+  })
+
+  test('registers the history command', async () => {
+    const { readFileSync } = await import('node:fs')
+    const indexSource = readFileSync(
+      new URL('./index.ts', import.meta.url).pathname,
+      'utf-8',
+    )
+
+    expect(indexSource).toContain(
+      "import { historyCommand } from './commands/history.ts'",
+    )
+    expect(indexSource).toContain('program.addCommand(historyCommand)')
   })
 })

@@ -42,6 +42,67 @@ describe('runMigrations', () => {
     db.close()
   })
 
+  it('creates the audit_log table with SaaS-mirrored columns on a fresh DB', () => {
+    const db = new Database(':memory:')
+    runMigrations(db)
+    expect(tableNames(db)).toContain('audit_log')
+    const cols = columnNames(db, 'audit_log')
+    for (const c of [
+      'id',
+      'node_id',
+      'action',
+      'field',
+      'old_value',
+      'new_value',
+      'snapshot',
+      'changed_by',
+      'created_at',
+    ]) {
+      expect(cols).toContain(c)
+    }
+    db.close()
+  })
+
+  it('adds audit_log when upgrading an existing pre-audit DB', () => {
+    const db = new Database(':memory:')
+    // Simulate a DB already at the pre-audit version (nodes + edges + metadata,
+    // user_version = 2) that has never seen the audit migration.
+    db.run(`
+      CREATE TABLE nodes (
+        id TEXT PRIMARY KEY,
+        type TEXT NOT NULL CHECK(type IN ('project', 'feature', 'task')),
+        title TEXT NOT NULL,
+        description TEXT,
+        status TEXT NOT NULL DEFAULT 'draft' CHECK(status IN ('draft', 'pending_review', 'approved', 'in_progress', 'done', 'blocked', 'cancelled')),
+        metadata TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      )
+    `)
+    db.run(`
+      CREATE TABLE edges (
+        source_id TEXT NOT NULL REFERENCES nodes(id),
+        target_id TEXT NOT NULL REFERENCES nodes(id),
+        relation TEXT NOT NULL CHECK(relation IN ('part_of', 'blocks')),
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        PRIMARY KEY (source_id, target_id, relation)
+      )
+    `)
+    db.run("INSERT INTO nodes (id, type, title) VALUES ('task_1', 'task', 'T')")
+    db.run('PRAGMA user_version = 2')
+
+    expect(tableNames(db)).not.toContain('audit_log')
+    runMigrations(db)
+    expect(userVersion(db)).toBe(LATEST_VERSION)
+    expect(tableNames(db)).toContain('audit_log')
+    // existing data preserved across the upgrade
+    const row = db
+      .query<{ id: string }, []>('SELECT id FROM nodes WHERE id = ?')
+      .get('task_1') as { id: string }
+    expect(row.id).toBe('task_1')
+    db.close()
+  })
+
   it('is a no-op when run twice (idempotent)', () => {
     const db = new Database(':memory:')
     runMigrations(db)

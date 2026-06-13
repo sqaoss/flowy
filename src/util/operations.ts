@@ -15,7 +15,9 @@
  * field, or an argument the CLI uses, the contract test fails — catching drift
  * before it ships. See `server/src/contract.test.ts` for the documented list
  * of intentional local/SaaS divergences (SaaS-only `whoami`, `register`,
- * `rotateApiKey`, `createCheckout`, `auditLog`, `ancestors`).
+ * `rotateApiKey`, `createCheckout`). `auditLog` was a SaaS-only divergence
+ * until P1-2/F27 ported it to the bundled local server; it is now part of the
+ * shared LOCAL_CONTRACT_OPERATIONS set.
  */
 
 // --- Nodes: read --------------------------------------------------------------
@@ -118,6 +120,18 @@ export const TASK_DEPS = `query TaskDeps($id: String!) {
 export const SEARCH = `query Search($query: String!, $type: String, $status: String, $limit: Int) {
   search(query: $query, type: $type, status: $status, limit: $limit) {
     id type title description status
+  }
+}`
+
+/**
+ * history.ts — audit history for a node, newest first. Served by BOTH backends:
+ * the SaaS server (always) and, since P1-2/F27, the bundled local server. The
+ * selection set mirrors the SaaS `auditLog` query (flowy-saas
+ * `test/helpers/cli-queries.ts`) so output is identical across backends.
+ */
+export const AUDIT_LOG = `query AuditLog($nodeId: String!, $limit: Int) {
+  auditLog(nodeId: $nodeId, limit: $limit) {
+    id action field oldValue newValue snapshot changedBy createdAt
   }
 }`
 
@@ -318,6 +332,7 @@ export const LOCAL_CONTRACT_OPERATIONS = {
   EXPORT_PROJECT,
   EXPORT_DESCENDANTS,
   EXPORT_EDGES,
+  AUDIT_LOG,
 } as const
 
 /**
