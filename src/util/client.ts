@@ -47,7 +47,9 @@ export async function graphql<T = unknown>(
       )
     }
 
-    throw new Error(error?.message)
+    const err = new Error(error?.message) as Error & { code?: string }
+    if (code) err.code = code
+    throw err
   }
 
   return json.data as T
