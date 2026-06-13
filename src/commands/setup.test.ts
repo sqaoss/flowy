@@ -53,29 +53,27 @@ describe('setup command', () => {
     expect(setupCommand.commands).toHaveLength(2)
   })
 
-  test('setup local checks for docker and errors if not found', async () => {
-    mockSpawnSync.mockReturnValue({ status: 1 })
+  test('setup local installs the pinned package version (no docker)', async () => {
+    mockSpawnSync.mockReturnValue({ status: 0 })
 
     const { setupCommand } = await import('./setup.ts')
+    const { pinnedInstallSpec } = await import('./serve.ts')
     await setupCommand.parseAsync(['local'], { from: 'user' })
 
-    expect(mockSpawnSync).toHaveBeenCalledWith('docker', ['--version'], {
-      stdio: 'ignore',
-    })
-    expect(mockOutputError).toHaveBeenCalledWith(
-      expect.objectContaining({
-        message: expect.stringContaining('Docker is required'),
-      }),
+    // installs the package pinned to the exact CLI version
+    expect(mockSpawnSync).toHaveBeenCalledWith(
+      'bun',
+      ['add', pinnedInstallSpec()],
+      expect.anything(),
+    )
+    // never shells out to docker
+    expect(mockSpawnSync.mock.calls.some((call) => call[0] === 'docker')).toBe(
+      false,
     )
   })
 
   test('setup local saves config with mode "local" and apiUrl on success', async () => {
     mockSpawnSync.mockReturnValue({ status: 0 })
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true }))
-    vi.doMock('node:fs', async () => {
-      const actual = await vi.importActual<typeof import('node:fs')>('node:fs')
-      return { ...actual, existsSync: () => true }
-    })
 
     const { setupCommand } = await import('./setup.ts')
     await setupCommand.parseAsync(['local'], { from: 'user' })
