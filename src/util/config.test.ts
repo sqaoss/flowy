@@ -52,7 +52,9 @@ describe('config', () => {
   test('loadConfig returns defaults when no config file exists', async () => {
     const { loadConfig } = await import('./config.ts')
     const config = loadConfig()
-    expect(config.mode).toBe('saas')
+    // Canonical default mode is "remote" (was "saas" — kept as a back-compat
+    // alias on read only).
+    expect(config.mode).toBe('remote')
     expect(config.apiUrl).toBe('https://flowy-ai.fly.dev/graphql')
     expect(config.apiKey).toBe('')
     expect(config.client.name).toBe('')
@@ -195,5 +197,170 @@ describe('config', () => {
     expect(
       (updated.projects[cwd] as { activeFeature?: string }).activeFeature,
     ).toBe('feat_999')
+  })
+
+  describe('per-mode profiles (F25)', () => {
+    test('default config canonicalizes mode to "remote"', async () => {
+      const { loadConfig } = await import('./config.ts')
+      const config = loadConfig()
+      // Canonical vocab is "remote"; "saas" is only a back-compat alias.
+      expect(config.mode).toBe('remote')
+    })
+
+    test('local apiKey/projects do not bleed into remote mode', async () => {
+      const { saveConfig, loadConfig } = await import('./config.ts')
+
+      // Configure the local profile with a key + a project mapping.
+      const local = loadConfig()
+      local.mode = 'local'
+      local.apiKey = 'local-secret'
+      local.apiUrl = 'http://localhost:4000/graphql'
+      local.projects['/work/local'] = { id: 'proj_local', name: 'LocalProj' }
+      saveConfig(local)
+
+      // Switch to remote: the local key/projects must NOT be visible.
+      const remote = loadConfig()
+      remote.mode = 'remote'
+      expect(remote.apiKey).toBe('')
+      expect(remote.apiUrl).toBe('https://flowy-ai.fly.dev/graphql')
+      expect(remote.projects['/work/local']).toBeUndefined()
+
+      // Set a different key/project in remote mode and persist.
+      remote.apiKey = 'remote-secret'
+      remote.projects['/work/remote'] = {
+        id: 'proj_remote',
+        name: 'RemoteProj',
+      }
+      saveConfig(remote)
+
+      // Back to local: local data intact, remote data not visible.
+      const reloadLocal = loadConfig()
+      reloadLocal.mode = 'local'
+      expect(reloadLocal.apiKey).toBe('local-secret')
+      expect(reloadLocal.projects['/work/local']?.name).toBe('LocalProj')
+      expect(reloadLocal.projects['/work/remote']).toBeUndefined()
+    })
+
+    test('getConfig reads from the active mode profile, not the other', async () => {
+      const { saveConfig, loadConfig, getConfig } = await import('./config.ts')
+
+      const local = loadConfig()
+      local.mode = 'local'
+      local.apiKey = 'local-secret'
+      local.apiUrl = 'http://localhost:4000/graphql'
+      saveConfig(local)
+
+      const remote = loadConfig()
+      remote.mode = 'remote'
+      remote.apiKey = 'remote-secret'
+      saveConfig(remote)
+
+      // Active mode is now remote (last saved). getConfig sees remote creds.
+      const cfg = getConfig()
+      expect(cfg.apiKey).toBe('remote-secret')
+      expect(cfg.apiUrl).toBe('https://flowy-ai.fly.dev/graphql')
+    })
+
+    test('client name is shared across modes', async () => {
+      const { saveConfig, loadConfig } = await import('./config.ts')
+      const config = loadConfig()
+      config.client.name = 'Acme'
+      saveConfig(config)
+      const reloaded = loadConfig()
+      reloaded.mode = reloaded.mode === 'local' ? 'remote' : 'local'
+      expect(reloaded.client.name).toBe('Acme')
+    })
+
+    test('migrates a legacy flat config into the active-mode profile', async () => {
+      const { loadConfig } = await import('./config.ts')
+      // Legacy shape written by an older CLI: flat apiKey/apiUrl/projects,
+      // mode="saas" (the old vocab).
+      writeFileSync(
+        CONFIG_PATH,
+        JSON.stringify({
+          mode: 'saas',
+          apiUrl: 'https://flowy-ai.fly.dev/graphql',
+          apiKey: 'legacy-key',
+          client: { name: 'Legacy Co' },
+          projects: { '/legacy/path': { id: 'p1', name: 'Legacy' } },
+        }),
+      )
+
+      const config = loadConfig()
+      // "saas" canonicalizes to "remote".
+      expect(config.mode).toBe('remote')
+      // Flat fields land in the (remote) active profile.
+      expect(config.apiKey).toBe('legacy-key')
+      expect(config.projects['/legacy/path']?.name).toBe('Legacy')
+      expect(config.client.name).toBe('Legacy Co')
+    })
+
+    test('resolveProject/resolveFeature use the active mode profile only', async () => {
+      const { saveConfig, loadConfig, resolveProject, resolveFeature } =
+        await import('./config.ts')
+      const cwd = process.cwd()
+
+      const local = loadConfig()
+      local.mode = 'local'
+      local.projects[cwd] = {
+        id: 'proj_local',
+        name: 'Local',
+        activeFeature: 'feat_local',
+      }
+      saveConfig(local)
+
+      const remote = loadConfig()
+      remote.mode = 'remote'
+      remote.projects[cwd] = {
+        id: 'proj_remote',
+        name: 'Remote',
+        activeFeature: 'feat_remote',
+      }
+      saveConfig(remote)
+
+      // Active mode is remote → resolution returns the remote project.
+      expect(resolveProject()?.id).toBe('proj_remote')
+      expect(resolveFeature()).toBe('feat_remote')
+    })
+
+    test('requireRemoteMode throws a coded error in local mode', async () => {
+      const { saveConfig, loadConfig, requireRemoteMode } = await import(
+        './config.ts'
+      )
+      const config = loadConfig()
+      config.mode = 'local'
+      saveConfig(config)
+
+      expect(() => requireRemoteMode('whoami')).toThrow(/local mode/i)
+      try {
+        requireRemoteMode('whoami')
+      } catch (error) {
+        expect((error as { code?: string }).code).toBe('LOCAL_MODE')
+      }
+    })
+
+    test('requireRemoteMode is a no-op in remote mode', async () => {
+      const { saveConfig, loadConfig, requireRemoteMode } = await import(
+        './config.ts'
+      )
+      const config = loadConfig()
+      config.mode = 'remote'
+      saveConfig(config)
+      expect(() => requireRemoteMode('whoami')).not.toThrow()
+    })
+
+    test('a half-written config (mode set, key not yet) still loads cleanly', async () => {
+      const { saveConfig, loadConfig } = await import('./config.ts')
+      // Simulate save-after-mode-switch but before the key arrives.
+      const config = loadConfig()
+      config.mode = 'remote'
+      saveConfig(config)
+
+      const reloaded = loadConfig()
+      expect(reloaded.mode).toBe('remote')
+      expect(reloaded.apiKey).toBe('')
+      expect(reloaded.apiUrl).toBe('https://flowy-ai.fly.dev/graphql')
+      expect(reloaded.projects).toEqual({})
+    })
   })
 })

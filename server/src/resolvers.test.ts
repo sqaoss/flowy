@@ -580,7 +580,7 @@ describe('createResolvers', () => {
   })
 
   describe('Query.subtree', () => {
-    it('returns full tree traversal across all edge types', () => {
+    it('returns the part_of hierarchy by default', () => {
       const project = resolvers.Mutation.createNode(null, {
         type: 'project',
         title: 'Root',
@@ -606,6 +606,125 @@ describe('createResolvers', () => {
 
       const tree = resolvers.Query.subtree(null, { nodeId: project.id })
       expect(tree).toHaveLength(2)
+    })
+
+    it('returns parentId, depth and relation for each node (default part_of)', () => {
+      const project = resolvers.Mutation.createNode(null, {
+        type: 'project',
+        title: 'Root',
+      })
+      const feature = resolvers.Mutation.createNode(null, {
+        type: 'feature',
+        title: 'F1',
+      })
+      const task = resolvers.Mutation.createNode(null, {
+        type: 'task',
+        title: 'T1',
+      })
+      resolvers.Mutation.createEdge(null, {
+        sourceId: feature.id,
+        targetId: project.id,
+        relation: 'part_of',
+      })
+      resolvers.Mutation.createEdge(null, {
+        sourceId: task.id,
+        targetId: feature.id,
+        relation: 'part_of',
+      })
+
+      const tree = resolvers.Query.subtree(null, { nodeId: project.id })
+      const byId = new Map(tree.map((n) => [n.id, n]))
+
+      const featNode = byId.get(feature.id)
+      expect(featNode).toBeDefined()
+      expect(featNode?.depth).toBe(1)
+      expect(featNode?.parentId).toBe(project.id)
+      expect(featNode?.relation).toBe('part_of')
+
+      const taskNode = byId.get(task.id)
+      expect(taskNode).toBeDefined()
+      expect(taskNode?.depth).toBe(2)
+      expect(taskNode?.parentId).toBe(feature.id)
+      expect(taskNode?.relation).toBe('part_of')
+    })
+
+    it('excludes blocks edges from the default part_of view', () => {
+      const project = resolvers.Mutation.createNode(null, {
+        type: 'project',
+        title: 'Root',
+      })
+      const feature = resolvers.Mutation.createNode(null, {
+        type: 'feature',
+        title: 'F1',
+      })
+      const task = resolvers.Mutation.createNode(null, {
+        type: 'task',
+        title: 'T1',
+      })
+      const blocker = resolvers.Mutation.createNode(null, {
+        type: 'task',
+        title: 'Blocker',
+      })
+      resolvers.Mutation.createEdge(null, {
+        sourceId: feature.id,
+        targetId: project.id,
+        relation: 'part_of',
+      })
+      resolvers.Mutation.createEdge(null, {
+        sourceId: task.id,
+        targetId: feature.id,
+        relation: 'part_of',
+      })
+      // blocker blocks task: source=blocker, target=task. A blocks edge must NOT
+      // pull the blocker into the project's part_of hierarchy view.
+      resolvers.Mutation.createEdge(null, {
+        sourceId: blocker.id,
+        targetId: task.id,
+        relation: 'blocks',
+      })
+
+      const tree = resolvers.Query.subtree(null, { nodeId: project.id })
+      const ids = tree.map((n) => n.id)
+      expect(ids).toContain(feature.id)
+      expect(ids).toContain(task.id)
+      expect(ids).not.toContain(blocker.id)
+      expect(tree.every((n) => n.relation === 'part_of')).toBe(true)
+    })
+
+    it('follows only the requested relation when overridden', () => {
+      const task = resolvers.Mutation.createNode(null, {
+        type: 'task',
+        title: 'Target',
+      })
+      const blocker = resolvers.Mutation.createNode(null, {
+        type: 'task',
+        title: 'Blocker',
+      })
+      const child = resolvers.Mutation.createNode(null, {
+        type: 'task',
+        title: 'Part of target',
+      })
+      // blocker blocks task (source=blocker, target=task)
+      resolvers.Mutation.createEdge(null, {
+        sourceId: blocker.id,
+        targetId: task.id,
+        relation: 'blocks',
+      })
+      // child is part_of task (source=child, target=task)
+      resolvers.Mutation.createEdge(null, {
+        sourceId: child.id,
+        targetId: task.id,
+        relation: 'part_of',
+      })
+
+      const blocks = resolvers.Query.subtree(null, {
+        nodeId: task.id,
+        relation: 'blocks',
+      })
+      expect(blocks.map((n) => n.id)).toEqual([blocker.id])
+      expect(blocks[0].relation).toBe('blocks')
+      expect(blocks[0].depth).toBe(1)
+      expect(blocks[0].parentId).toBe(task.id)
     })
 
     it('respects maxDepth', () => {
@@ -638,6 +757,7 @@ describe('createResolvers', () => {
       })
       expect(shallow).toHaveLength(1)
       expect(shallow[0].id).toBe(feature.id)
+      expect(shallow[0].depth).toBe(1)
     })
   })
 

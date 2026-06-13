@@ -40,6 +40,23 @@ export interface NodeGql {
   updatedAt: string
 }
 
+/**
+ * A node returned from a subtree traversal, annotated with the edge that pulled
+ * it in: `parentId` (the node it descends from), `depth` (1 for the root's
+ * direct children), and `relation` (the relation of the linking edge).
+ */
+export interface SubtreeNodeGql extends NodeGql {
+  parentId: string
+  depth: number
+  relation: string
+}
+
+interface SubtreeRow extends NodeRow {
+  parent_id: string
+  depth: number
+  edge_relation: string
+}
+
 const NODE_COLS =
   'id, type, title, description, status, metadata, created_at, updated_at'
 
@@ -177,21 +194,39 @@ export function createResolvers(db: Db) {
         return selectNodes(rows)
       },
 
-      subtree: (_: unknown, args: { nodeId: string; maxDepth?: number }) => {
+      // Walk the part_of hierarchy (or another `relation`, default 'part_of')
+      // downward from `nodeId`, returning each reachable node annotated with the
+      // edge that pulled it in: parentId, depth (root's direct children = 1) and
+      // relation. Following a single relation keeps the hierarchy view clean —
+      // `blocks` dependency edges no longer leak into the part_of tree.
+      subtree: (
+        _: unknown,
+        args: { nodeId: string; relation?: string; maxDepth?: number },
+      ): SubtreeNodeGql[] => {
+        const relation = args.relation ?? 'part_of'
         const maxDepth = args.maxDepth ?? 100
         if (maxDepth === 0) return []
         const rows = db.raw
           .query(
-            `WITH RECURSIVE tree(id, depth) AS (
-              SELECT source_id, 1 FROM edges WHERE target_id = ?1
+            `WITH RECURSIVE tree(id, parent_id, depth) AS (
+              SELECT source_id, target_id, 1 FROM edges
+                WHERE target_id = ?1 AND relation = ?3
               UNION ALL
-              SELECT e.source_id, t.depth + 1 FROM edges e
-              JOIN tree t ON e.target_id = t.id WHERE t.depth < ?2
+              SELECT e.source_id, e.target_id, t.depth + 1 FROM edges e
+                JOIN tree t ON e.target_id = t.id
+                WHERE t.depth < ?2 AND e.relation = ?3
             )
-            SELECT DISTINCT ${prefixedCols()} FROM nodes n JOIN tree t ON n.id = t.id`,
+            SELECT ${prefixedCols()}, t.parent_id AS parent_id, t.depth AS depth, ?3 AS edge_relation
+            FROM nodes n JOIN tree t ON n.id = t.id
+            ORDER BY t.depth`,
           )
-          .all(args.nodeId, maxDepth) as NodeRow[]
-        return selectNodes(rows)
+          .all(args.nodeId, maxDepth, relation) as SubtreeRow[]
+        return rows.map((row) => ({
+          ...rowToNode(row),
+          parentId: row.parent_id,
+          depth: row.depth,
+          relation: row.edge_relation,
+        }))
       },
 
       // Nodes connected to `nodeId` by `relation`, following edges in the given
