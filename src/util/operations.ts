@@ -116,10 +116,18 @@ export const TASK_DEPS = `query TaskDeps($id: String!) {
   }
 }`
 
-/** search.ts — full-text search with optional type/status/limit filters. */
+/**
+ * search.ts — full-text search with optional type/status/limit filters.
+ * Returns a SearchResult envelope (F32): `nodes` is the page capped at `limit`,
+ * `truncated` flags that more matches exist than were returned, and `total` is
+ * the unbounded match count — so the CLI can show a truncation marker instead
+ * of silently dropping rows at the default cap.
+ */
 export const SEARCH = `query Search($query: String!, $type: String, $status: String, $limit: Int) {
   search(query: $query, type: $type, status: $status, limit: $limit) {
-    id type title description status
+    nodes { id type title description status }
+    truncated
+    total
   }
 }`
 

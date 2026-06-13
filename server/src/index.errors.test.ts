@@ -29,9 +29,12 @@ describe('server error masking', () => {
   it('surfaces a too-short search error with real message and VALIDATION_ERROR code', async () => {
     instance = createServer({ dbPath: ':memory:', port: 0 })
 
-    const json = await gql('query ($q: String!) { search(query: $q) { id } }', {
-      q: 'ab',
-    })
+    const json = await gql(
+      'query ($q: String!) { search(query: $q) { nodes { id } } }',
+      {
+        q: 'ab',
+      },
+    )
 
     expect(json.errors).toBeDefined()
     const error = json.errors![0]

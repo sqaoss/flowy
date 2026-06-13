@@ -360,11 +360,22 @@ describe('CLI/local-server contract (P1-1)', () => {
     })
     expect(Array.isArray(exportEdges.edges)).toBe(true)
 
-    const search = await ok<{ search: Array<{ id: string }> }>(
-      LOCAL_CONTRACT_OPERATIONS.SEARCH,
-      { query: 'Contract', type: 'project', status: null, limit: 50 },
-    )
-    expect(search.search.some((n) => n.id === project.id)).toBe(true)
+    // SEARCH returns a SearchResult envelope (F32): nodes + truncation meta.
+    const search = await ok<{
+      search: {
+        nodes: Array<{ id: string }>
+        truncated: boolean
+        total: number
+      }
+    }>(LOCAL_CONTRACT_OPERATIONS.SEARCH, {
+      query: 'Contract',
+      type: 'project',
+      status: null,
+      limit: 50,
+    })
+    expect(search.search.nodes.some((n) => n.id === project.id)).toBe(true)
+    expect(search.search.truncated).toBe(false)
+    expect(typeof search.search.total).toBe('number')
 
     // auditLog (P1-2/F27): the task has accumulated a trail — a `create` on
     // insert, a `status_change` to pending_review, an `approve`, plus the

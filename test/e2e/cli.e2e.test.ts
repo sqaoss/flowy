@@ -272,14 +272,15 @@ describe('CLI e2e against the bundled local server (F18)', () => {
     expect(task?.relation).toBe('part_of')
   })
 
-  it('search finds nodes by text', async () => {
-    const results = await cli<Array<{ id: string; title: string }>>([
-      'search',
-      'E2E Project',
-      '--type',
-      'project',
-    ])
-    expect(results.some((n) => n.id === projectId)).toBe(true)
+  it('search finds nodes by text and reports truncation metadata (F32)', async () => {
+    const results = await cli<{
+      nodes: Array<{ id: string; title: string }>
+      truncated: boolean
+      total: number
+    }>(['search', 'E2E Project', '--type', 'project'])
+    expect(results.nodes.some((n) => n.id === projectId)).toBe(true)
+    expect(results.truncated).toBe(false)
+    expect(typeof results.total).toBe('number')
   })
 
   it('export -> import round-trips the backlog idempotently', async () => {

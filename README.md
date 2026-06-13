@@ -147,6 +147,8 @@ flowy serve --port 5000 --host 0.0.0.0 --db ~/flowy.sqlite   # override defaults
 
 The self-hosted server supports the full planning workflow — `init`, `project`/`feature`/`task` CRUD, `status`, `approve`, `search`, `tree`, `task deps`, `task list --ready/--all`, and `import`/`export`. Account-only commands (`whoami`, `billing`, `key`) are remote-mode features and don't apply locally.
 
+The canonical status flow is `draft → pending_review → approved → in_progress → done`, plus `blocked` and `cancelled`. By default any status change is allowed (and the `status` command validates the value client-side). To make the local server *enforce* legal transitions — rejecting illegal jumps like `draft → done` with a `VALIDATION_ERROR` — start it with `FLOWY_ENFORCE_STATUS_LIFECYCLE=1`. Enforcement is opt-in and off by default.
+
 ## Command Reference
 
 | Command | Description |
@@ -179,7 +181,7 @@ The self-hosted server supports the full planning workflow — `init`, `project`
 | `task deps <id>` | Show what blocks a task and what it blocks |
 | `status <id> <status>` | Update status (shorthand) |
 | `approve <id>` | Approve (must be pending_review) |
-| `search <query> [--type] [--status] [--limit]` | Full-text search |
+| `search <query> [--type] [--status] [--limit]` | Full-text search; prints `{ nodes, truncated, total }` and warns on stderr when results are capped at `--limit` |
 | `tree <id> [--depth N]` | Show subtree from any entity |
 | `import <manifest>` | Ingest a JSON manifest of nodes + edges (idempotent by client-key) |
 | `export [output]` | Dump the active project as a manifest (stdout or file) |
