@@ -12,6 +12,11 @@ import {
   serializeManifest,
   stripClientKey,
 } from '../util/manifest.ts'
+import {
+  EXPORT_DESCENDANTS,
+  EXPORT_EDGES,
+  EXPORT_PROJECT,
+} from '../util/operations.ts'
 
 /** Relations export captures from the real edge model. */
 const RELATIONS = ['part_of', 'blocks'] as const
@@ -25,22 +30,6 @@ interface ServerNode {
   metadata: string | null
 }
 
-const PROJECT_QUERY = `query ExportProject($id: String!) {
-  node(id: $id) { id type title description status metadata }
-}`
-
-const DESCENDANTS_QUERY = `query ExportDescendants($nodeId: String!, $relation: String, $maxDepth: Int) {
-  descendants(nodeId: $nodeId, relation: $relation, maxDepth: $maxDepth) {
-    id type title description status metadata
-  }
-}`
-
-const EDGES_QUERY = `query ExportEdges($nodeId: String!, $relation: String!) {
-  edges(nodeId: $nodeId, relation: $relation, direction: "outgoing") {
-    id metadata
-  }
-}`
-
 export const exportCommand = new Command('export')
   .description(
     'Dump the active project (nodes + edges, with client-keys) as a manifest',
@@ -49,14 +38,14 @@ export const exportCommand = new Command('export')
   .action(async (outputPath: string | undefined) => {
     try {
       const project = requireProject()
-      const root = await graphql<{ node: ServerNode | null }>(PROJECT_QUERY, {
+      const root = await graphql<{ node: ServerNode | null }>(EXPORT_PROJECT, {
         id: project.id,
       })
       if (!root.node) {
         throw new Error(`Active project ${project.id} not found.`)
       }
       const descendants = await graphql<{ descendants: ServerNode[] }>(
-        DESCENDANTS_QUERY,
+        EXPORT_DESCENDANTS,
         { nodeId: project.id, relation: 'part_of', maxDepth: 100 },
       )
 
@@ -94,7 +83,7 @@ export const exportCommand = new Command('export')
         for (const relation of RELATIONS) {
           const data = await graphql<{
             edges: Array<{ id: string; metadata: string | null }>
-          }>(EDGES_QUERY, { nodeId: sn.id, relation })
+          }>(EXPORT_EDGES, { nodeId: sn.id, relation })
           for (const target of data.edges) {
             const targetKey =
               keyById.get(target.id) ?? keyOf(target.id, target.metadata)

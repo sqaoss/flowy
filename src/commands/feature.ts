@@ -7,6 +7,15 @@ import {
 } from '../util/config.ts'
 import { resolveDescription } from '../util/description.ts'
 import { output, outputError } from '../util/format.ts'
+import {
+  CREATE_EDGE,
+  CREATE_NODE,
+  DELETE_NODE,
+  DESCENDANTS,
+  DESCENDANTS_BRIEF,
+  GET_NODE,
+  UPDATE_NODE,
+} from '../util/operations.ts'
 
 export const featureCommand = new Command('feature').description(
   'Manage features in the active project',
@@ -32,22 +41,15 @@ featureCommand
         descriptionFile: opts.descriptionFile,
       })
       const nodeData = await graphql<{ createNode: { id: string } }>(
-        `mutation CreateNode($type: String!, $title: String!, $description: String) {
-          createNode(type: $type, title: $title, description: $description) {
-            id type title description status createdAt updatedAt
-          }
-        }`,
+        CREATE_NODE,
         { type: 'feature', title: opts.title, description },
       )
       const featureId = nodeData.createNode.id
-      await graphql(
-        `mutation CreateEdge($sourceId: String!, $targetId: String!, $relation: String!) {
-          createEdge(sourceId: $sourceId, targetId: $targetId, relation: $relation) {
-            sourceId targetId relation createdAt
-          }
-        }`,
-        { sourceId: featureId, targetId: project.id, relation: 'part_of' },
-      )
+      await graphql(CREATE_EDGE, {
+        sourceId: featureId,
+        targetId: project.id,
+        relation: 'part_of',
+      })
       output(nodeData.createNode)
     } catch (error) {
       outputError(error)
@@ -63,14 +65,11 @@ featureCommand
       const project = requireProject()
       const data = await graphql<{
         descendants: Array<{ id: string; type: string; title: string }>
-      }>(
-        `query Descendants($nodeId: String!, $relation: String, $maxDepth: Int) {
-          descendants(nodeId: $nodeId, relation: $relation, maxDepth: $maxDepth) {
-            id type title status
-          }
-        }`,
-        { nodeId: project.id, relation: 'part_of', maxDepth: 1 },
-      )
+      }>(DESCENDANTS_BRIEF, {
+        nodeId: project.id,
+        relation: 'part_of',
+        maxDepth: 1,
+      })
       const features = data.descendants.filter((n) => n.type === 'feature')
       const match = features.find(
         (f) => f.id === nameOrId || f.title === nameOrId,
@@ -111,14 +110,7 @@ featureCommand
       const project = requireProject()
       const data = await graphql<{
         descendants: Array<{ id: string; type: string }>
-      }>(
-        `query Descendants($nodeId: String!, $relation: String, $maxDepth: Int) {
-          descendants(nodeId: $nodeId, relation: $relation, maxDepth: $maxDepth) {
-            id type title description status createdAt updatedAt
-          }
-        }`,
-        { nodeId: project.id, relation: 'part_of', maxDepth: 1 },
-      )
+      }>(DESCENDANTS, { nodeId: project.id, relation: 'part_of', maxDepth: 1 })
       const features = data.descendants.filter((n) => n.type === 'feature')
       output(features)
     } catch (error) {
@@ -158,11 +150,7 @@ featureCommand
       }
       if (opts.metadata != null) variables.metadata = opts.metadata
       const data = await graphql<{ updateNode: unknown }>(
-        `mutation UpdateNode($id: String!, $title: String, $description: String, $metadata: String) {
-          updateNode(id: $id, title: $title, description: $description, metadata: $metadata) {
-            id type title description status metadata createdAt updatedAt
-          }
-        }`,
+        UPDATE_NODE,
         variables,
       )
       output(data.updateNode)
@@ -183,12 +171,9 @@ featureCommand
           'No feature specified. Pass an ID or set an active feature.',
         )
       }
-      const data = await graphql<{ deleteNode: boolean }>(
-        `mutation DeleteNode($id: String!) {
-          deleteNode(id: $id)
-        }`,
-        { id: featureId },
-      )
+      const data = await graphql<{ deleteNode: boolean }>(DELETE_NODE, {
+        id: featureId,
+      })
       output({ deleted: data.deleteNode })
     } catch (error) {
       outputError(error)
@@ -207,14 +192,9 @@ featureCommand
           'No feature specified. Pass an ID or set an active feature.',
         )
       }
-      const data = await graphql<{ node: unknown }>(
-        `query GetNode($id: String!) {
-          node(id: $id) {
-            id type title description status metadata createdAt updatedAt
-          }
-        }`,
-        { id: featureId },
-      )
+      const data = await graphql<{ node: unknown }>(GET_NODE, {
+        id: featureId,
+      })
       output(data.node)
     } catch (error) {
       outputError(error)
