@@ -1,4 +1,4 @@
-import { describe, expect, test, vi } from 'vitest'
+import { beforeEach, describe, expect, test, vi } from 'vitest'
 
 const mockUpdateProjectConfig = vi.fn()
 
@@ -22,6 +22,10 @@ vi.mock('../util/format.ts', () => ({
 }))
 
 describe('feature command', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
   test('exports a command group named "feature" with subcommands', async () => {
     const { featureCommand } = await import('./feature.ts')
     expect(featureCommand.name()).toBe('feature')
@@ -31,6 +35,8 @@ describe('feature command', () => {
     expect(subcommandNames).toContain('unset')
     expect(subcommandNames).toContain('list')
     expect(subcommandNames).toContain('show')
+    expect(subcommandNames).toContain('update')
+    expect(subcommandNames).toContain('delete')
   })
 
   test('create calls outputError when no active project', async () => {
@@ -67,5 +73,159 @@ describe('feature command', () => {
     expect(fakeProject.activeFeature).toBeUndefined()
 
     expect(output).toHaveBeenCalledWith({ activeFeature: null })
+  })
+
+  test('update sends updateNode with only the title when title-only', async () => {
+    const { graphql } = await import('../util/client.ts')
+    const { output } = await import('../util/format.ts')
+    const { featureCommand } = await import('./feature.ts')
+
+    vi.mocked(graphql).mockResolvedValueOnce({
+      updateNode: { id: 'feat_1', title: 'New' },
+    })
+
+    const updateCmd = featureCommand.commands.find(
+      (c) => c.name() === 'update',
+    )!
+    await updateCmd.parseAsync(['feat_1', '--title', 'New'], { from: 'user' })
+
+    expect(graphql).toHaveBeenCalledWith(
+      expect.stringContaining('updateNode'),
+      {
+        id: 'feat_1',
+        title: 'New',
+      },
+    )
+    expect(output).toHaveBeenCalledWith({ id: 'feat_1', title: 'New' })
+  })
+
+  test('update sends updateNode with only the description when description-only', async () => {
+    const { graphql } = await import('../util/client.ts')
+    const { featureCommand } = await import('./feature.ts')
+
+    vi.mocked(graphql).mockResolvedValueOnce({ updateNode: { id: 'feat_1' } })
+
+    const updateCmd = featureCommand.commands.find(
+      (c) => c.name() === 'update',
+    )!
+    await updateCmd.parseAsync(['feat_1', '--description', 'Body'], {
+      from: 'user',
+    })
+
+    expect(graphql).toHaveBeenCalledWith(
+      expect.stringContaining('updateNode'),
+      {
+        id: 'feat_1',
+        description: 'Body',
+      },
+    )
+  })
+
+  test('update sends updateNode with only the metadata when metadata-only', async () => {
+    const { graphql } = await import('../util/client.ts')
+    const { featureCommand } = await import('./feature.ts')
+
+    vi.mocked(graphql).mockResolvedValueOnce({ updateNode: { id: 'feat_1' } })
+
+    const updateCmd = featureCommand.commands.find(
+      (c) => c.name() === 'update',
+    )!
+    await updateCmd.parseAsync(['feat_1', '--metadata', '{"k":"v"}'], {
+      from: 'user',
+    })
+
+    expect(graphql).toHaveBeenCalledWith(
+      expect.stringContaining('updateNode'),
+      {
+        id: 'feat_1',
+        metadata: '{"k":"v"}',
+      },
+    )
+  })
+
+  test('update sends updateNode with combined fields', async () => {
+    const { graphql } = await import('../util/client.ts')
+    const { featureCommand } = await import('./feature.ts')
+
+    vi.mocked(graphql).mockResolvedValueOnce({ updateNode: { id: 'feat_1' } })
+
+    const updateCmd = featureCommand.commands.find(
+      (c) => c.name() === 'update',
+    )!
+    await updateCmd.parseAsync(
+      ['feat_1', '--title', 'New', '--description', 'Body', '--metadata', '{}'],
+      { from: 'user' },
+    )
+
+    expect(graphql).toHaveBeenCalledWith(
+      expect.stringContaining('updateNode'),
+      {
+        id: 'feat_1',
+        title: 'New',
+        description: 'Body',
+        metadata: '{}',
+      },
+    )
+  })
+
+  test('delete sends deleteNode mutation', async () => {
+    const { graphql } = await import('../util/client.ts')
+    const { output } = await import('../util/format.ts')
+    const { featureCommand } = await import('./feature.ts')
+
+    vi.mocked(graphql).mockResolvedValueOnce({ deleteNode: true })
+
+    const deleteCmd = featureCommand.commands.find(
+      (c) => c.name() === 'delete',
+    )!
+    await deleteCmd.parseAsync(['feat_1'], { from: 'user' })
+
+    expect(graphql).toHaveBeenCalledWith(
+      expect.stringContaining('deleteNode'),
+      {
+        id: 'feat_1',
+      },
+    )
+    expect(output).toHaveBeenCalledWith({ deleted: true })
+  })
+
+  test('delete surfaces CONFLICT via outputError with its code', async () => {
+    const { graphql } = await import('../util/client.ts')
+    const { outputError } = await import('../util/format.ts')
+    const { featureCommand } = await import('./feature.ts')
+
+    const conflict = Object.assign(new Error('has children'), {
+      code: 'CONFLICT',
+    })
+    vi.mocked(graphql).mockRejectedValueOnce(conflict)
+
+    const deleteCmd = featureCommand.commands.find(
+      (c) => c.name() === 'delete',
+    )!
+    await deleteCmd.parseAsync(['feat_1'], { from: 'user' })
+
+    expect(outputError).toHaveBeenCalledWith(
+      expect.objectContaining({ code: 'CONFLICT' }),
+    )
+  })
+
+  test('delete surfaces NOT_FOUND via outputError with its code', async () => {
+    const { graphql } = await import('../util/client.ts')
+    const { outputError } = await import('../util/format.ts')
+    const { featureCommand } = await import('./feature.ts')
+
+    const notFound = Object.assign(new Error('Node feat_x not found'), {
+      code: 'NOT_FOUND',
+    })
+    vi.mocked(graphql).mockRejectedValueOnce(notFound)
+
+    const deleteCmd = featureCommand.commands.find(
+      (c) => c.name() === 'delete',
+    )!
+    await deleteCmd.parseAsync(['feat_x'], { from: 'user' })
+
+    expect(outputError).toHaveBeenCalledWith(
+      expect.objectContaining({ code: 'NOT_FOUND' }),
+    )
   })
 })

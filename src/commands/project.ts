@@ -1,6 +1,7 @@
 import { Command } from 'commander'
 import { graphql } from '../util/client.ts'
 import { loadConfig, requireProject, saveConfig } from '../util/config.ts'
+import { resolveDescription } from '../util/description.ts'
 import { output, outputError } from '../util/format.ts'
 
 export const projectCommand = new Command('project').description(
@@ -102,3 +103,62 @@ projectCommand
   .description('Show project details')
   .argument('[id]', 'Project ID (defaults to active project)')
   .action(async (id?: string) => showProject(id))
+
+projectCommand
+  .command('update')
+  .description('Update a project')
+  .argument('[id]', 'Project ID (defaults to active project)')
+  .option('--title <title>', 'New title')
+  .option(
+    '--description <text>',
+    'New description, used verbatim (never read as a file path)',
+  )
+  .option(
+    '--description-file <path>',
+    'Read the new description from a file, or "-" for stdin',
+  )
+  .option('--metadata <json>', 'New metadata as a JSON string')
+  .action(async (id: string | undefined, opts) => {
+    try {
+      const projectId = id ?? requireProject().id
+      const variables: Record<string, unknown> = { id: projectId }
+      if (opts.title != null) variables.title = opts.title
+      if (opts.description != null || opts.descriptionFile != null) {
+        variables.description = await resolveDescription({
+          description: opts.description,
+          descriptionFile: opts.descriptionFile,
+        })
+      }
+      if (opts.metadata != null) variables.metadata = opts.metadata
+      const data = await graphql<{ updateNode: unknown }>(
+        `mutation UpdateNode($id: String!, $title: String, $description: String, $metadata: String) {
+          updateNode(id: $id, title: $title, description: $description, metadata: $metadata) {
+            id type title description status metadata createdAt updatedAt
+          }
+        }`,
+        variables,
+      )
+      output(data.updateNode)
+    } catch (error) {
+      outputError(error)
+    }
+  })
+
+projectCommand
+  .command('delete')
+  .description('Delete a project')
+  .argument('[id]', 'Project ID (defaults to active project)')
+  .action(async (id?: string) => {
+    try {
+      const projectId = id ?? requireProject().id
+      const data = await graphql<{ deleteNode: boolean }>(
+        `mutation DeleteNode($id: String!) {
+          deleteNode(id: $id)
+        }`,
+        { id: projectId },
+      )
+      output({ deleted: data.deleteNode })
+    } catch (error) {
+      outputError(error)
+    }
+  })
