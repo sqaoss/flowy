@@ -1,3 +1,10 @@
+# [1.3.0](https://github.com/sqaoss/flowy/compare/v1.2.2...v1.3.0) (2026-06-13)
+
+
+### Features
+
+* **server:** versioned migrations + node update/delete + writable metadata ([#26](https://github.com/sqaoss/flowy/issues/26)) ([7d325b0](https://github.com/sqaoss/flowy/commit/7d325b0585d2a5f7753dc205540d84554552a626))
+
 ## [1.2.2](https://github.com/sqaoss/flowy/compare/v1.2.1...v1.2.2) (2026-06-13)
 
 
