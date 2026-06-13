@@ -281,11 +281,44 @@ describe('CLI/local-server contract (P1-1)', () => {
     })
     expect(exportDescendants.descendants.length).toBeGreaterThan(0)
 
-    const subtree = await ok<{ subtree: Array<{ id: string }> }>(
-      LOCAL_CONTRACT_OPERATIONS.SUBTREE,
-      { nodeId: project.id, maxDepth: 10 },
-    )
-    expect(subtree.subtree.length).toBeGreaterThan(0)
+    // SUBTREE follows one relation (default part_of) and annotates each node
+    // with parentId/depth/relation. From the project, the part_of view is:
+    //   project -> feature (depth 1) -> {task, blocker, imported} (depth 2),
+    // all reached via part_of edges. The blocker -> task `blocks` edge must NOT
+    // change anyone's parent/relation: every returned node carries
+    // relation 'part_of' and its part_of parent, never the blocks linkage.
+    const subtree = await ok<{
+      subtree: Array<{
+        id: string
+        parentId: string
+        depth: number
+        relation: string
+      }>
+    }>(LOCAL_CONTRACT_OPERATIONS.SUBTREE, {
+      nodeId: project.id,
+      relation: 'part_of',
+      maxDepth: 10,
+    })
+    const subtreeById = new Map(subtree.subtree.map((n) => [n.id, n]))
+    expect(subtreeById.get(feature.id)).toMatchObject({
+      parentId: project.id,
+      depth: 1,
+      relation: 'part_of',
+    })
+    expect(subtreeById.get(task.id)).toMatchObject({
+      parentId: feature.id,
+      depth: 2,
+      relation: 'part_of',
+    })
+    // the blocker is reached via its part_of edge to the feature (depth 2),
+    // NOT via the blocks edge that points at the task — proving blocks edges
+    // do not leak into the hierarchy view.
+    expect(subtreeById.get(blocker.id)).toMatchObject({
+      parentId: feature.id,
+      depth: 2,
+      relation: 'part_of',
+    })
+    expect(subtree.subtree.every((n) => n.relation === 'part_of')).toBe(true)
 
     // task is blocked by an unfinished blocker, so readyTasks excludes it.
     const ready = await ok<{ readyTasks: Array<{ id: string }> }>(
