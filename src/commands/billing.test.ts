@@ -3,11 +3,13 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 let mockGraphql: ReturnType<typeof vi.fn>
 let mockOutput: ReturnType<typeof vi.fn>
 let mockOutputError: ReturnType<typeof vi.fn>
+let mockMode: 'local' | 'remote'
 
 beforeEach(() => {
   mockGraphql = vi.fn()
   mockOutput = vi.fn()
   mockOutputError = vi.fn()
+  mockMode = 'remote'
 
   vi.doMock('../util/client.ts', () => ({
     graphql: mockGraphql,
@@ -16,6 +18,18 @@ beforeEach(() => {
   vi.doMock('../util/format.ts', () => ({
     output: mockOutput,
     outputError: mockOutputError,
+  }))
+
+  vi.doMock('../util/config.ts', () => ({
+    requireRemoteMode: (commandName: string) => {
+      if (mockMode === 'local') {
+        const err = new Error(
+          `"flowy ${commandName}" is only available in remote mode. The active mode is local mode.`,
+        ) as Error & { code?: string }
+        err.code = 'LOCAL_MODE'
+        throw err
+      }
+    },
   }))
 })
 
@@ -93,5 +107,23 @@ describe('billing command', () => {
     })
 
     expect(mockOutputError).toHaveBeenCalledWith(error)
+  })
+
+  test('checkout errors cleanly in local mode without hitting the server', async () => {
+    mockMode = 'local'
+
+    const { billingCommand } = await import('./billing.ts')
+    await billingCommand.parseAsync(['checkout', '--tier', 'pro'], {
+      from: 'user',
+    })
+
+    expect(mockGraphql).not.toHaveBeenCalled()
+    expect(mockOutput).not.toHaveBeenCalled()
+    expect(mockOutputError).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: expect.stringMatching(/local mode/i),
+        code: 'LOCAL_MODE',
+      }),
+    )
   })
 })
