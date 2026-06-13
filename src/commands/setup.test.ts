@@ -97,16 +97,37 @@ describe('setup command', () => {
     )
   })
 
-  test('setup remote requires --tier', async () => {
+  test('setup remote registers without --tier (tier is optional)', async () => {
+    const mockGraphql = vi.fn().mockResolvedValue({
+      register: {
+        user: {
+          id: 'user_1',
+          email: 'test@example.com',
+          tier: null,
+          createdAt: '2026-06-13T00:00:00Z',
+          graceEndsAt: null,
+        },
+        apiKey: 'flowy_key',
+        checkoutUrl: null,
+      },
+    })
+    vi.doMock('../util/client.ts', () => ({
+      graphql: mockGraphql,
+    }))
+    mockSpawnSync.mockReturnValue({ status: 0, stdout: Buffer.from('') })
+
     const { setupCommand } = await import('./setup.ts')
     await setupCommand.parseAsync(['remote', '--email', 'test@example.com'], {
       from: 'user',
     })
 
-    expect(mockOutputError).toHaveBeenCalledWith(
-      expect.objectContaining({
-        message: expect.stringContaining('--tier is required'),
-      }),
+    // No tier required: registration proceeds, no usage error raised.
+    expect(mockOutputError).not.toHaveBeenCalled()
+    expect(mockGraphql).toHaveBeenCalledOnce()
+    const [, variables] = mockGraphql.mock.calls[0]!
+    expect(variables).toEqual({ email: 'test@example.com', tier: undefined })
+    expect(mockSaveConfig).toHaveBeenCalledWith(
+      expect.objectContaining({ mode: 'remote', apiKey: 'flowy_key' }),
     )
   })
 
@@ -220,5 +241,69 @@ describe('setup command', () => {
         checkoutUrl: 'https://checkout.stripe.com/session_123',
       }),
     )
+  })
+
+  test('setup local warns when the skill install fails', async () => {
+    // bun add succeeds, npx skills add fails (non-zero status).
+    mockSpawnSync.mockImplementation((cmd: string) =>
+      cmd === 'npx' ? { status: 1 } : { status: 0 },
+    )
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    const { setupCommand } = await import('./setup.ts')
+    await setupCommand.parseAsync(['local'], { from: 'user' })
+
+    const warned = errSpy.mock.calls.map((c) => String(c[0])).join('\n')
+    expect(warned).toMatch(/skill/i)
+    expect(warned).toContain('npx skills add sqaoss/flowy')
+    // Setup itself still completes successfully (config saved, result emitted).
+    expect(mockOutput).toHaveBeenCalled()
+    expect(mockOutputError).not.toHaveBeenCalled()
+    errSpy.mockRestore()
+  })
+
+  test('setup local does not warn when the skill install succeeds', async () => {
+    mockSpawnSync.mockReturnValue({ status: 0 })
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    const { setupCommand } = await import('./setup.ts')
+    await setupCommand.parseAsync(['local'], { from: 'user' })
+
+    const warned = errSpy.mock.calls.map((c) => String(c[0])).join('\n')
+    expect(warned).not.toMatch(/skill/i)
+    errSpy.mockRestore()
+  })
+
+  test('setup remote warns when the skill install fails', async () => {
+    const mockGraphql = vi.fn().mockResolvedValue({
+      register: {
+        user: {
+          id: 'user_1',
+          email: 'a@b.com',
+          tier: null,
+          createdAt: '2026-06-13T00:00:00Z',
+          graceEndsAt: null,
+        },
+        apiKey: 'flowy_key',
+        checkoutUrl: null,
+      },
+    })
+    vi.doMock('../util/client.ts', () => ({ graphql: mockGraphql }))
+    mockSpawnSync.mockImplementation((cmd: string) =>
+      cmd === 'npx' ? { status: 1 } : { status: 0 },
+    )
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    const { setupCommand } = await import('./setup.ts')
+    await setupCommand.parseAsync(['remote', '--email', 'a@b.com'], {
+      from: 'user',
+    })
+
+    const warned = errSpy.mock.calls.map((c) => String(c[0])).join('\n')
+    expect(warned).toMatch(/skill/i)
+    expect(warned).toContain('npx skills add sqaoss/flowy')
+    expect(mockOutput).toHaveBeenCalled()
+    expect(mockOutputError).not.toHaveBeenCalled()
+    errSpy.mockRestore()
   })
 })
