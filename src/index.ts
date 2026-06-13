@@ -12,6 +12,7 @@ const pkgPath = resolve(
 const pkg = JSON.parse(readFileSync(pkgPath, 'utf-8'))
 
 import { approveCommand } from './commands/approve.ts'
+import { backupCommand, restoreCommand } from './commands/backup.ts'
 import { billingCommand } from './commands/billing.ts'
 import { clientCommand } from './commands/client.ts'
 import { exportCommand } from './commands/export.ts'
@@ -51,5 +52,7 @@ program.addCommand(historyCommand)
 program.addCommand(whoamiCommand)
 program.addCommand(importCommand)
 program.addCommand(exportCommand)
+program.addCommand(backupCommand)
+program.addCommand(restoreCommand)
 
 program.parse()

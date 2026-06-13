@@ -22,6 +22,7 @@ Flowy runs against one of two backends. Which one you're in determines which com
 | Account / API key | None | Email registration; API key stored in config |
 | Subscription | None — fully free | Data operations require an active subscription |
 | Planning workflow | Full (`init`, project/feature/task CRUD, status, approve, search, tree, `task deps`, `task list --ready/--all`, `import`/`export`) | Full, same commands |
+| `backup` / `restore` | Available (raw SQLite snapshot of the local DB) | **Not available** — local-only |
 | `whoami` / `billing` / `key` | **Not available** — these hard-fail locally | Available |
 
 The planning workflow is **identical** in both modes. Only the account/billing commands differ.
@@ -182,6 +183,19 @@ A manifest is a single JSON document describing a backlog: `nodes` (projects, fe
 ```
 
 **Idempotency:** import upserts by client-key — re-importing the same manifest updates the matching nodes in place instead of creating duplicates. The key is stored in node metadata under the reserved `__flowyKey` field (your own `metadata` is preserved alongside it and stripped back out on export). A node's `parent` implies a `part_of` edge, so simple manifests need no explicit `edges`; `blocks` dependencies are listed in `edges`. Edges live in the real edge model (`createEdge` / `Query.edges`), so a `blocks` edge created by hand with `task block` is captured on export and never re-created on the next import. Works in both local and remote modes.
+
+### Backup and Restore (local mode only)
+```bash
+flowy backup flowy-backup.sqlite             # consistent snapshot of the local SQLite DB
+flowy restore flowy-backup.sqlite            # restore into a fresh DB (refuses to clobber)
+flowy restore flowy-backup.sqlite --force    # overwrite an existing DB
+```
+
+`backup`/`restore` operate on the **raw SQLite file** the self-hosted server uses, resolving its path from `--db`, then `$FLOWY_DB_PATH`, then `./flowy.sqlite`. The snapshot is taken with SQLite `VACUUM INTO`, so it is consistent even while the server is running. `restore` refuses to overwrite an existing database without `--force`.
+
+This is **complementary to** `export`/`import`, not a replacement: `export` produces a portable, re-importable JSON manifest of one project (works in both modes); `backup` produces an exact, byte-faithful snapshot of the whole local database for disaster recovery (local mode only). Use `export` to move or seed a backlog; use `backup` for a true point-in-time snapshot.
+
+**Where the data lives:** in self-hosted mode the entire backlog is one SQLite file — `./flowy.sqlite` by default (or `$FLOWY_DB_PATH`). Under Docker it lives in the named volume `flowy-data` (mounted at `/data`, `FLOWY_DB_PATH=/data/flowy.sqlite`); `docker compose down -v` deletes that volume and the backlog with it, so take a `flowy backup` first.
 
 ### Remote-only (hosted mode)
 These hit account/billing resolvers that do **not** exist on the local server; they fail in local mode.
