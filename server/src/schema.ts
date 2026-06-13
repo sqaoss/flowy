@@ -19,11 +19,29 @@ export const typeDefs = /* GraphQL */ `
     createdAt: String!
   }
 
+  # A node returned from a subtree traversal, annotated with how it was reached:
+  # the parent it descends from (parentId), how many edges down the root it sits
+  # (depth, root's direct children are depth 1), and the relation of the edge
+  # that links it to its parent.
+  type SubtreeNode {
+    id: String!
+    type: String!
+    title: String!
+    description: String
+    status: String!
+    metadata: String
+    createdAt: String!
+    updatedAt: String!
+    parentId: String!
+    depth: Int!
+    relation: String!
+  }
+
   type Query {
     node(id: String!): Node
     nodes(type: String): [Node!]!
     descendants(nodeId: String!, relation: String, maxDepth: Int): [Node!]!
-    subtree(nodeId: String!, maxDepth: Int): [Node!]!
+    subtree(nodeId: String!, relation: String, maxDepth: Int): [SubtreeNode!]!
     edges(nodeId: String!, relation: String!, direction: String): [Node!]!
     readyTasks(projectId: String): [Node!]!
     search(query: String!, type: String, status: String, limit: Int): [Node!]!

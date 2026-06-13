@@ -76,10 +76,11 @@ export const LIST_TASKS = `query ListTasks($nodeId: String!, $relation: String!,
   }
 }`
 
-/** tree.ts — full subtree from any root. */
-export const SUBTREE = `query Subtree($nodeId: String!, $maxDepth: Int) {
-  subtree(nodeId: $nodeId, maxDepth: $maxDepth) {
-    id type title status
+/** tree.ts — subtree from any root, filtered to one relation (default part_of),
+ *  each node annotated with parentId/depth/relation. */
+export const SUBTREE = `query Subtree($nodeId: String!, $relation: String, $maxDepth: Int) {
+  subtree(nodeId: $nodeId, relation: $relation, maxDepth: $maxDepth) {
+    id type title status parentId depth relation
   }
 }`
 
