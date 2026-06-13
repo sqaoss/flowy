@@ -1,3 +1,10 @@
+## [1.6.1](https://github.com/sqaoss/flowy/compare/v1.6.0...v1.6.1) (2026-06-13)
+
+
+### Bug Fixes
+
+* **cli:** setup remote without --tier, surface skill-install failure, accurate mode-aware docs (P0-10/F14/F16) ([bf2d0ed](https://github.com/sqaoss/flowy/commit/bf2d0ed49e6cc5717954760d522b5dbe55794257))
+
 # [1.6.0](https://github.com/sqaoss/flowy/compare/v1.5.0...v1.6.0) (2026-06-13)
 
 
