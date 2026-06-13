@@ -7,6 +7,7 @@ import {
   saveConfig,
 } from '../util/config.ts'
 import { output, outputError } from '../util/format.ts'
+import { ROTATE_API_KEY } from '../util/operations.ts'
 
 export const keyCommand = new Command('key').description('API key management')
 
@@ -31,14 +32,7 @@ keyCommand
           }
           apiKey: string
         }
-      }>(
-        `mutation RotateApiKey {
-          rotateApiKey {
-            user { id email tier createdAt graceEndsAt }
-            apiKey
-          }
-        }`,
-      )
+      }>(ROTATE_API_KEY)
 
       const { user, apiKey } = data.rotateApiKey
       const config = loadConfig()

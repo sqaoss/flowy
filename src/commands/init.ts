@@ -4,6 +4,7 @@ import { Command } from 'commander'
 import { graphql } from '../util/client.ts'
 import { loadConfig, saveConfig } from '../util/config.ts'
 import { output, outputError } from '../util/format.ts'
+import { CREATE_PROJECT } from '../util/operations.ts'
 
 export const initCommand = new Command('init')
   .description('Initialize Flowy for the current git repository')
@@ -30,11 +31,7 @@ export const initCommand = new Command('init')
       }
 
       const data = await graphql<{ createNode: { id: string; title: string } }>(
-        `mutation CreateProject($type: String!, $title: String!) {
-          createNode(type: $type, title: $title) {
-            id type title description status metadata createdAt updatedAt
-          }
-        }`,
+        CREATE_PROJECT,
         { type: 'project', title: repoName },
       )
 

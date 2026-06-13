@@ -2,6 +2,7 @@ import { spawnSync } from 'node:child_process'
 import { Command, Option } from 'commander'
 import { fingerprintKey, loadConfig, saveConfig } from '../util/config.ts'
 import { output, outputError } from '../util/format.ts'
+import { REGISTER } from '../util/operations.ts'
 import { pinnedInstallSpec } from './serve.ts'
 
 export const setupCommand = new Command('setup').description(
@@ -104,16 +105,7 @@ setupCommand
           apiKey: string
           checkoutUrl: string
         }
-      }>(
-        `mutation Register($email: String!, $tier: String) {
-          register(email: $email, tier: $tier) {
-            user { id email tier createdAt graceEndsAt }
-            apiKey
-            checkoutUrl
-          }
-        }`,
-        { email: opts.email, tier: opts.tier },
-      )
+      }>(REGISTER, { email: opts.email, tier: opts.tier })
 
       config.apiKey = data.register.apiKey
       saveConfig(config)

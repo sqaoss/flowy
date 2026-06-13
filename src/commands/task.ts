@@ -3,6 +3,19 @@ import { graphql } from '../util/client.ts'
 import { requireFeature, resolveProject } from '../util/config.ts'
 import { resolveDescription } from '../util/description.ts'
 import { output, outputError } from '../util/format.ts'
+import {
+  ALL_TASKS,
+  BLOCK_TASK,
+  CREATE_TASK,
+  DELETE_NODE,
+  LINK_TASK,
+  LIST_TASKS,
+  READY_TASKS,
+  SHOW_TASK,
+  TASK_DEPS,
+  UNBLOCK_TASK,
+  UPDATE_NODE,
+} from '../util/operations.ts'
 
 export const taskCommand = new Command('task').description(
   'Manage tasks in the active feature',
@@ -27,23 +40,17 @@ taskCommand
         description: opts.description,
         descriptionFile: opts.descriptionFile,
       })
-      const data = await graphql<{ createNode: { id: string } }>(
-        `mutation CreateTask($type: String!, $title: String!, $description: String) {
-          createNode(type: $type, title: $title, description: $description) {
-            id type title description status createdAt
-          }
-        }`,
-        { type: 'task', title: opts.title, description },
-      )
+      const data = await graphql<{ createNode: { id: string } }>(CREATE_TASK, {
+        type: 'task',
+        title: opts.title,
+        description,
+      })
       const taskId = data.createNode.id
-      await graphql(
-        `mutation LinkTask($sourceId: String!, $targetId: String!, $relation: String!) {
-          createEdge(sourceId: $sourceId, targetId: $targetId, relation: $relation) {
-            sourceId targetId relation
-          }
-        }`,
-        { sourceId: taskId, targetId: featureId, relation: 'part_of' },
-      )
+      await graphql(LINK_TASK, {
+        sourceId: taskId,
+        targetId: featureId,
+        relation: 'part_of',
+      })
       output(data.createNode)
     } catch (error) {
       outputError(error)
@@ -67,40 +74,27 @@ taskCommand
       if (opts.ready) {
         const projectId =
           opts.project ?? (opts.all ? undefined : resolveProject()?.id)
-        const data = await graphql<{ readyTasks: unknown[] }>(
-          `query ReadyTasks($projectId: String) {
-            readyTasks(projectId: $projectId) {
-              id type title status createdAt
-            }
-          }`,
-          { projectId: projectId ?? null },
-        )
+        const data = await graphql<{ readyTasks: unknown[] }>(READY_TASKS, {
+          projectId: projectId ?? null,
+        })
         output(data.readyTasks)
         return
       }
 
       if (opts.all) {
-        const data = await graphql<{ nodes: unknown[] }>(
-          `query AllTasks($type: String!) {
-            nodes(type: $type) {
-              id type title status createdAt
-            }
-          }`,
-          { type: 'task' },
-        )
+        const data = await graphql<{ nodes: unknown[] }>(ALL_TASKS, {
+          type: 'task',
+        })
         output(data.nodes)
         return
       }
 
       const featureId = requireFeature()
-      const data = await graphql<{ descendants: unknown[] }>(
-        `query ListTasks($nodeId: String!, $relation: String!, $maxDepth: Int) {
-          descendants(nodeId: $nodeId, relation: $relation, maxDepth: $maxDepth) {
-            id type title status createdAt
-          }
-        }`,
-        { nodeId: featureId, relation: 'part_of', maxDepth: 1 },
-      )
+      const data = await graphql<{ descendants: unknown[] }>(LIST_TASKS, {
+        nodeId: featureId,
+        relation: 'part_of',
+        maxDepth: 1,
+      })
       const tasks = data.descendants.filter(
         (n: unknown) => (n as { type: string }).type === 'task',
       )
@@ -120,20 +114,7 @@ taskCommand
         node: Record<string, unknown>
         blockedBy: unknown[]
         blocks: unknown[]
-      }>(
-        `query ShowTask($id: String!) {
-          node(id: $id) {
-            id type title description status metadata createdAt updatedAt
-          }
-          blockedBy: edges(nodeId: $id, relation: "blocks", direction: "incoming") {
-            id type title status
-          }
-          blocks: edges(nodeId: $id, relation: "blocks", direction: "outgoing") {
-            id type title status
-          }
-        }`,
-        { id },
-      )
+      }>(SHOW_TASK, { id })
       output({
         ...data.node,
         blockedBy: data.blockedBy,
@@ -170,11 +151,7 @@ taskCommand
       }
       if (opts.metadata != null) variables.metadata = opts.metadata
       const data = await graphql<{ updateNode: unknown }>(
-        `mutation UpdateNode($id: String!, $title: String, $description: String, $metadata: String) {
-          updateNode(id: $id, title: $title, description: $description, metadata: $metadata) {
-            id type title description status metadata createdAt updatedAt
-          }
-        }`,
+        UPDATE_NODE,
         variables,
       )
       output(data.updateNode)
@@ -189,12 +166,7 @@ taskCommand
   .argument('<id>', 'Task ID')
   .action(async (id: string) => {
     try {
-      const data = await graphql<{ deleteNode: boolean }>(
-        `mutation DeleteNode($id: String!) {
-          deleteNode(id: $id)
-        }`,
-        { id },
-      )
+      const data = await graphql<{ deleteNode: boolean }>(DELETE_NODE, { id })
       output({ deleted: data.deleteNode })
     } catch (error) {
       outputError(error)
@@ -208,14 +180,11 @@ taskCommand
   .argument('<id2>', 'Blocked task ID')
   .action(async (id1: string, id2: string) => {
     try {
-      const data = await graphql<{ createEdge: unknown }>(
-        `mutation BlockTask($sourceId: String!, $targetId: String!, $relation: String!) {
-          createEdge(sourceId: $sourceId, targetId: $targetId, relation: $relation) {
-            sourceId targetId relation createdAt
-          }
-        }`,
-        { sourceId: id1, targetId: id2, relation: 'blocks' },
-      )
+      const data = await graphql<{ createEdge: unknown }>(BLOCK_TASK, {
+        sourceId: id1,
+        targetId: id2,
+        relation: 'blocks',
+      })
       output(data.createEdge)
     } catch (error) {
       outputError(error)
@@ -229,12 +198,11 @@ taskCommand
   .argument('<id2>', 'Blocked task ID')
   .action(async (id1: string, id2: string) => {
     try {
-      const data = await graphql<{ removeEdge: boolean }>(
-        `mutation UnblockTask($sourceId: String!, $targetId: String!, $relation: String!) {
-          removeEdge(sourceId: $sourceId, targetId: $targetId, relation: $relation)
-        }`,
-        { sourceId: id1, targetId: id2, relation: 'blocks' },
-      )
+      const data = await graphql<{ removeEdge: boolean }>(UNBLOCK_TASK, {
+        sourceId: id1,
+        targetId: id2,
+        relation: 'blocks',
+      })
       output({ removed: data.removeEdge })
     } catch (error) {
       outputError(error)
@@ -248,14 +216,7 @@ taskCommand
   .action(async (id: string) => {
     try {
       const data = await graphql<{ blockedBy: unknown[]; blocks: unknown[] }>(
-        `query TaskDeps($id: String!) {
-          blockedBy: edges(nodeId: $id, relation: "blocks", direction: "incoming") {
-            id type title status
-          }
-          blocks: edges(nodeId: $id, relation: "blocks", direction: "outgoing") {
-            id type title status
-          }
-        }`,
+        TASK_DEPS,
         { id },
       )
       output({ id, blockedBy: data.blockedBy, blocks: data.blocks })
