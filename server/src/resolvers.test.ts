@@ -1395,21 +1395,33 @@ describe('createResolvers', () => {
   })
 
   describe('Mutation.createEdge — edge cases', () => {
-    it('throws on duplicate edge', () => {
+    it('is idempotent: creating the same edge twice succeeds and yields one edge', () => {
       const p = create(resolvers, { type: 'project', title: 'P' })
       const f = create(resolvers, { type: 'feature', title: 'F' })
-      resolvers.Mutation.createEdge(null, {
+      const first = resolvers.Mutation.createEdge(null, {
         sourceId: f.id,
         targetId: p.id,
         relation: 'part_of',
       })
-      expect(() =>
-        resolvers.Mutation.createEdge(null, {
-          sourceId: f.id,
-          targetId: p.id,
-          relation: 'part_of',
-        }),
-      ).toThrow()
+      const second = resolvers.Mutation.createEdge(null, {
+        sourceId: f.id,
+        targetId: p.id,
+        relation: 'part_of',
+      })
+      // Both calls succeed and return the same canonical edge (same created_at).
+      expect(second).toMatchObject({
+        sourceId: f.id,
+        targetId: p.id,
+        relation: 'part_of',
+      })
+      expect(second.createdAt).toBe(first.createdAt)
+      // Exactly one row exists for the triple — no duplicate.
+      const { n } = db.raw
+        .query(
+          'SELECT COUNT(*) AS n FROM edges WHERE source_id = ? AND target_id = ? AND relation = ?',
+        )
+        .get(f.id, p.id, 'part_of') as { n: number }
+      expect(n).toBe(1)
     })
 
     it('throws when source node does not exist', () => {

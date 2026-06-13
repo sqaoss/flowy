@@ -778,25 +778,39 @@ export function createResolvers(db: Db, opts: ResolverOptions = {}) {
           throw validationError('A node cannot block itself')
         }
         const now = new Date().toISOString()
+        // Idempotent (F29): re-creating an existing edge is a no-op success, not
+        // a PK-violation error. ON CONFLICT DO NOTHING leaves the original row
+        // (and its created_at) untouched; we only audit a genuinely new edge.
         db.raw.transaction(() => {
-          db.raw.run(
-            'INSERT INTO edges (source_id, target_id, relation, created_at) VALUES (?, ?, ?, ?)',
+          const result = db.raw.run(
+            'INSERT INTO edges (source_id, target_id, relation, created_at) VALUES (?, ?, ?, ?) ON CONFLICT (source_id, target_id, relation) DO NOTHING',
             [args.sourceId, args.targetId, args.relation, now],
           )
-          // Record the edge against its source node so `auditLog(sourceId)`
-          // surfaces it. field = relation; newValue = the target it now links.
-          insertAudit(db, {
-            nodeId: args.sourceId,
-            action: 'create_edge',
-            field: args.relation,
-            newValue: args.targetId,
-          })
+          if (result.changes > 0) {
+            // Record the edge against its source node so `auditLog(sourceId)`
+            // surfaces it. field = relation; newValue = the target it now links.
+            insertAudit(db, {
+              nodeId: args.sourceId,
+              action: 'create_edge',
+              field: args.relation,
+              newValue: args.targetId,
+            })
+          }
         })()
+        // Read back the canonical row so the returned createdAt reflects the
+        // existing edge on a duplicate call, not the discarded `now`.
+        const edge = db.raw
+          .query(
+            'SELECT created_at FROM edges WHERE source_id = ? AND target_id = ? AND relation = ?',
+          )
+          .get(args.sourceId, args.targetId, args.relation) as {
+          created_at: string
+        }
         return {
           sourceId: args.sourceId,
           targetId: args.targetId,
           relation: args.relation,
-          createdAt: now,
+          createdAt: edge.created_at,
         }
       },
 
