@@ -14,7 +14,9 @@ const pkg = JSON.parse(readFileSync(pkgPath, 'utf-8'))
 import { approveCommand } from './commands/approve.ts'
 import { billingCommand } from './commands/billing.ts'
 import { clientCommand } from './commands/client.ts'
+import { exportCommand } from './commands/export.ts'
 import { featureCommand } from './commands/feature.ts'
+import { importCommand } from './commands/import.ts'
 import { initCommand } from './commands/init.ts'
 import { keyCommand } from './commands/key.ts'
 import { projectCommand } from './commands/project.ts'
@@ -45,5 +47,7 @@ program.addCommand(keyCommand)
 program.addCommand(searchCommand)
 program.addCommand(treeCommand)
 program.addCommand(whoamiCommand)
+program.addCommand(importCommand)
+program.addCommand(exportCommand)
 
 program.parse()

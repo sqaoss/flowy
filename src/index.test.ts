@@ -42,6 +42,12 @@ vi.mock('./commands/key.ts', () => ({
 vi.mock('./commands/serve.ts', () => ({
   serveCommand: { name: () => 'serve' },
 }))
+vi.mock('./commands/import.ts', () => ({
+  importCommand: { name: () => 'import' },
+}))
+vi.mock('./commands/export.ts', () => ({
+  exportCommand: { name: () => 'export' },
+}))
 
 describe('index.ts command registration', () => {
   test('registers billing and key commands', async () => {
@@ -72,5 +78,22 @@ describe('index.ts command registration', () => {
       "import { serveCommand } from './commands/serve.ts'",
     )
     expect(indexSource).toContain('program.addCommand(serveCommand)')
+  })
+
+  test('registers the import and export commands', async () => {
+    const { readFileSync } = await import('node:fs')
+    const indexSource = readFileSync(
+      new URL('./index.ts', import.meta.url).pathname,
+      'utf-8',
+    )
+
+    expect(indexSource).toContain(
+      "import { importCommand } from './commands/import.ts'",
+    )
+    expect(indexSource).toContain(
+      "import { exportCommand } from './commands/export.ts'",
+    )
+    expect(indexSource).toContain('program.addCommand(importCommand)')
+    expect(indexSource).toContain('program.addCommand(exportCommand)')
   })
 })
