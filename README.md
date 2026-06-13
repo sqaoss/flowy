@@ -108,6 +108,41 @@ A manifest looks like:
 
 Each node's `parent` implies a `part_of` edge, so the simplest manifests need no explicit `edges`. `blocks` dependencies go in `edges`. The reserved `__flowyKey` metadata field stores the client-key; your own `metadata` is preserved alongside it and stripped back out on export.
 
+### Backup and restore (local SQLite)
+
+In self-hosted mode your backlog lives in a single SQLite file (see [Where your data lives](#where-your-data-lives)). `flowy backup` takes a consistent, file-level snapshot of that database, and `flowy restore` reinstates one.
+
+```bash
+flowy backup flowy-backup.sqlite             # snapshot the local DB (./flowy.sqlite by default)
+flowy backup ~/snapshots/flowy.sqlite --db ~/flowy.sqlite   # back up a DB at a custom path
+flowy restore flowy-backup.sqlite            # restore into a fresh DB (refuses to clobber)
+flowy restore flowy-backup.sqlite --force    # overwrite an existing DB
+```
+
+The snapshot is taken with SQLite's `VACUUM INTO`, so it is transactionally consistent **even while the server is running** and writes a single self-contained file (no `-wal`/`-shm` sidecars). `restore` validates the source is a real SQLite database before touching the target, and **refuses to overwrite an existing database** unless you pass `--force`.
+
+Both commands resolve the database path the same way the server does: `--db <path>`, then `$FLOWY_DB_PATH`, then `./flowy.sqlite`.
+
+**`backup` vs. `export` — they're complementary, not redundant:**
+
+| | `flowy export` (logical) | `flowy backup` (raw) |
+|---|---|---|
+| Format | Portable JSON manifest | Exact SQLite file |
+| Scope | The active project's subtree | The entire database (all projects) |
+| Re-importable | Yes — `flowy import` (idempotent, cross-backend) | No — restore only, local server |
+| Use it for | Migrating between machines/backends, re-importing, diffing in git | Point-in-time disaster recovery, an exact byte-faithful snapshot |
+
+Use `export`/`import` to move a backlog around or seed another backend; use `backup`/`restore` for a true snapshot of your local server's data.
+
+### Where your data lives
+
+The self-hosted server persists everything in one SQLite file. Its location depends on how you run the server:
+
+- **`flowy serve`** (native): `./flowy.sqlite` in the current directory by default, or wherever `--db`/`$FLOWY_DB_PATH` points.
+- **Docker (`docker compose up`)**: inside the named volume `flowy-data`, mounted at `/data`, with `FLOWY_DB_PATH=/data/flowy.sqlite`. The data outlives the container — but `docker compose down -v` deletes the volume **and your backlog with it**. Take a `flowy backup` first.
+
+To back up the Docker volume's database, point `--db` at the in-container path while running `flowy backup` from inside the container, or restore into a fresh `flowy serve` directory and snapshot there.
+
 ## Agent Skill
 
 `flowy setup` installs an agent skill so your AI agent automatically knows every command. If that install step fails (offline, no `npx`, registry hiccup), setup prints a warning telling you to install it manually:
@@ -145,7 +180,7 @@ flowy serve                  # bind 127.0.0.1:4000, store data in ./flowy.sqlite
 flowy serve --port 5000 --host 0.0.0.0 --db ~/flowy.sqlite   # override defaults
 ```
 
-The self-hosted server supports the full planning workflow — `init`, `project`/`feature`/`task` CRUD, `status`, `approve`, `search`, `tree`, `task deps`, `task list --ready/--all`, and `import`/`export`. Account-only commands (`whoami`, `billing`, `key`) are remote-mode features and don't apply locally.
+The self-hosted server supports the full planning workflow — `init`, `project`/`feature`/`task` CRUD, `status`, `approve`, `search`, `tree`, `task deps`, `task list --ready/--all`, `import`/`export`, and `backup`/`restore` (raw SQLite snapshots). Account-only commands (`whoami`, `billing`, `key`) are remote-mode features and don't apply locally.
 
 The canonical status flow is `draft → pending_review → approved → in_progress → done`, plus `blocked` and `cancelled`. By default any status change is allowed (and the `status` command validates the value client-side). To make the local server *enforce* legal transitions — rejecting illegal jumps like `draft → done` with a `VALIDATION_ERROR` — start it with `FLOWY_ENFORCE_STATUS_LIFECYCLE=1`. Enforcement is opt-in and off by default.
 
@@ -185,6 +220,8 @@ The canonical status flow is `draft → pending_review → approved → in_progr
 | `tree <id> [--depth N]` | Show subtree from any entity |
 | `import <manifest>` | Ingest a JSON manifest of nodes + edges (idempotent by client-key) |
 | `export [output]` | Dump the active project as a manifest (stdout or file) |
+| `backup <dest> [--db <path>]` | Consistent file-level snapshot of the local SQLite database |
+| `restore <src> [--db <path>] [--force]` | Restore the local SQLite database from a backup (refuses to clobber without `--force`) |
 | `whoami` | Show current user (remote mode) |
 | `billing checkout --tier <tier>` | Get a checkout URL for a subscription (remote mode) |
 | `key rotate` | Revoke all API keys and issue a new one (remote mode) |
