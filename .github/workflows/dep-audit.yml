@@ -15,7 +15,9 @@ jobs:
   # Blocking gate: only the dependencies that actually ship to users
   # (`dependencies`, not `devDependencies`). The published package bundles
   # the CLI and server runtime deps; a known-vulnerable runtime dep should
-  # fail the build. `bun audit --prod` exits non-zero on any advisory.
+  # fail the build. `bun audit --prod` always exits 0, so it is not a gate;
+  # `bun audit --production --json` exits non-zero with a JSON report on a
+  # shipped-dep advisory (and prints `{}` with exit 0 when the tree is clean).
   prod-audit:
     runs-on: ubuntu-latest
     steps:
@@ -25,10 +27,10 @@ jobs:
           bun-version: latest
       - run: bun install --frozen-lockfile
       - name: Audit production (CLI) dependencies
-        run: bun audit --prod
+        run: bun audit --production --json
       - run: cd server && bun install --frozen-lockfile
       - name: Audit production (server) dependencies
-        run: cd server && bun audit --prod
+        run: cd server && bun audit --production --json
 
   # Informational: the full tree including devDependencies (semantic-release,
   # vitest, etc.). These never ship to users, so an advisory here should not

@@ -263,6 +263,19 @@ bun run typecheck     # TypeScript
 cd server && bunx --bun vitest run   # Server tests
 ```
 
+## Open Source vs. Hosted
+
+This repository — the `@sqaoss/flowy` CLI **and the bundled local server** it runs
+via `flowy serve` — is open source under Apache-2.0. You can self-host the full
+planning workflow with no account and no subscription; your data stays in a local
+SQLite file on your machine.
+
+The hosted service at `flowy-ai.fly.dev` is a separate, commercial offering. It is
+a proprietary backend whose source is **not** part of this repository, and it
+exposes a superset of the open-source server's GraphQL schema plus account and
+billing operations. Using the hosted service is optional — the CLI talks to either
+your local server or the hosted one depending on how you configure it.
+
 ## License
 
 Apache-2.0. Copyright 2026 SQA & Automation SRL.
