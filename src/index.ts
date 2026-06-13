@@ -21,6 +21,7 @@ import { historyCommand } from './commands/history.ts'
 import { importCommand } from './commands/import.ts'
 import { initCommand } from './commands/init.ts'
 import { keyCommand } from './commands/key.ts'
+import { mcpCommand } from './commands/mcp.ts'
 import { projectCommand } from './commands/project.ts'
 import { searchCommand } from './commands/search.ts'
 import { serveCommand } from './commands/serve.ts'
@@ -54,5 +55,6 @@ program.addCommand(importCommand)
 program.addCommand(exportCommand)
 program.addCommand(backupCommand)
 program.addCommand(restoreCommand)
+program.addCommand(mcpCommand)
 
 program.parse()

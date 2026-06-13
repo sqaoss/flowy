@@ -210,6 +210,18 @@ flowy key rotate                            # revoke all API keys and issue a ne
 flowy client set name "Your Name"           # set client display name in local config
 ```
 
+## MCP Server (alternative agent surface)
+
+Instead of shelling out to the CLI, an MCP-aware client can drive Flowy through `flowy mcp` — an [MCP](https://modelcontextprotocol.io) server over **stdio** that exposes the same workflow as typed tools. It is **mode-aware**: it reads the same `~/.config/flowy/config.json`, so it talks to whichever backend is configured (local `flowy serve` or hosted) with nothing extra to set up.
+
+Register it once with your client, e.g. Claude Code:
+
+```bash
+claude mcp add flowy -- flowy mcp
+```
+
+Tools (one per CLI operation): `flowy_project_*`, `flowy_feature_*`, `flowy_task_*` (create/update/delete/show/list), `flowy_task_deps`, `flowy_ready_tasks`, `flowy_claim_task`, `flowy_next_task` (atomically claim the next ready task — the one call to pick up work), `flowy_block`/`flowy_unblock`, `flowy_set_status`, `flowy_approve`, `flowy_search`, `flowy_tree`, `flowy_history`, `flowy_import`/`flowy_export`, and `flowy_whoami` (remote). Create tools resolve the active project/feature like the CLI does; tool errors carry the same coded classes (`NOT_FOUND`, `VALIDATION_ERROR`, …) so you can read and self-correct. The CLI and the MCP server are interchangeable — use whichever your client prefers.
+
 ## Descriptions: literal vs. file
 
 `create` and `update` commands take a description two ways. They are mutually exclusive.
