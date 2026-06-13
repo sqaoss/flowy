@@ -1,3 +1,11 @@
+## [1.3.1](https://github.com/sqaoss/flowy/compare/v1.3.0...v1.3.1) (2026-06-13)
+
+
+### Bug Fixes
+
+* bind localhost + native flowy serve + pinned install (F15/F17) ([#27](https://github.com/sqaoss/flowy/issues/27)) ([f6ee052](https://github.com/sqaoss/flowy/commit/f6ee052586fa34bec8c7c83d5b6c68007eaa5a86))
+* **cli:** literal --description + --description-file, fail-loud IDs, transport robustness ([#28](https://github.com/sqaoss/flowy/issues/28)) ([f65426e](https://github.com/sqaoss/flowy/commit/f65426e94897678e0b3b7f16ef3966fb2306f0b6))
+
 # [1.3.0](https://github.com/sqaoss/flowy/compare/v1.2.2...v1.3.0) (2026-06-13)
 
 
