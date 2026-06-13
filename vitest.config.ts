@@ -10,7 +10,7 @@ if (!process.env.CI) {
 export default defineConfig({
   test: {
     fileParallelism: false,
-    exclude: ['server/**', 'node_modules/**'],
+    exclude: ['server/**', 'node_modules/**', '.worktrees/**'],
     reporters,
   },
 })
