@@ -1,3 +1,10 @@
+# [1.5.0](https://github.com/sqaoss/flowy/compare/v1.4.0...v1.5.0) (2026-06-13)
+
+
+### Features
+
+* dependency read-back, task deps, list --ready, server readyTasks ([#31](https://github.com/sqaoss/flowy/issues/31)) ([320e8ba](https://github.com/sqaoss/flowy/commit/320e8bae355cdbc4809e8264c8cc280638fe71b5))
+
 # [1.4.0](https://github.com/sqaoss/flowy/compare/v1.3.1...v1.4.0) (2026-06-13)
 
 
