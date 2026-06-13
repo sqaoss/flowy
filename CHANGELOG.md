@@ -1,3 +1,10 @@
+# [1.8.0](https://github.com/sqaoss/flowy/compare/v1.7.0...v1.8.0) (2026-06-13)
+
+
+### Features
+
+* **config:** per-mode profiles + save-after-register + mode gating (F25) ([#37](https://github.com/sqaoss/flowy/issues/37)) ([d8e1e63](https://github.com/sqaoss/flowy/commit/d8e1e6300f76e839e40cd971e81edf78dedf8a6f))
+
 # [1.7.0](https://github.com/sqaoss/flowy/compare/v1.6.1...v1.7.0) (2026-06-13)
 
 
