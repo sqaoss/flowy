@@ -1,3 +1,10 @@
+# [1.10.0](https://github.com/sqaoss/flowy/compare/v1.9.0...v1.10.0) (2026-06-13)
+
+
+### Features
+
+* local audit_log + flowy history (F27) ([#40](https://github.com/sqaoss/flowy/issues/40)) ([ba9f561](https://github.com/sqaoss/flowy/commit/ba9f56178c69a6d3c78f8a9d116eda76c48ae4c3))
+
 # [1.9.0](https://github.com/sqaoss/flowy/compare/v1.8.0...v1.9.0) (2026-06-13)
 
 
