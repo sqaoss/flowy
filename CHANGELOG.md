@@ -1,3 +1,10 @@
+# [1.4.0](https://github.com/sqaoss/flowy/compare/v1.3.1...v1.4.0) (2026-06-13)
+
+
+### Features
+
+* **cli:** task/feature/project update + delete (P0-3/F1) ([#30](https://github.com/sqaoss/flowy/issues/30)) ([b628f72](https://github.com/sqaoss/flowy/commit/b628f72f7aee06fc17a42014a2a95028d92578aa))
+
 ## [1.3.1](https://github.com/sqaoss/flowy/compare/v1.3.0...v1.3.1) (2026-06-13)
 
 
