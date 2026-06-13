@@ -10,6 +10,14 @@ beforeEach(() => {
   vi.doMock('node:child_process', () => ({
     spawnSync: mockSpawnSync,
   }))
+  // Pretend the bundled server entry and its installed deps both exist so the
+  // command takes its normal path deterministically — independent of whether
+  // server/node_modules happens to be populated in this environment (CI runs
+  // the root test job before installing server deps).
+  vi.doMock('node:fs', async () => {
+    const actual = await vi.importActual<typeof import('node:fs')>('node:fs')
+    return { ...actual, existsSync: () => true }
+  })
   vi.doMock('../util/format.ts', () => ({
     output: vi.fn(),
     outputError: mockOutputError,
@@ -41,7 +49,15 @@ describe('serve command', () => {
       from: 'user',
     })
 
-    const runCall = mockSpawnSync.mock.calls.find((call) => call[0] === 'bun')
+    // The run invocation is the `bun` call whose args point at the bundled
+    // server entry — not e.g. a `bun install` call. Target it explicitly so
+    // the assertion does not depend on call ordering or environment state.
+    const runCall = mockSpawnSync.mock.calls.find(
+      (call) =>
+        call[0] === 'bun' &&
+        Array.isArray(call[1]) &&
+        call[1].some((a: string) => a.endsWith('index.ts')),
+    )
     expect(runCall).toBeDefined()
     const [, args, options] = runCall!
     // never invokes docker
