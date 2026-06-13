@@ -1,3 +1,10 @@
+## [1.2.2](https://github.com/sqaoss/flowy/compare/v1.2.1...v1.2.2) (2026-06-13)
+
+
+### Bug Fixes
+
+* unmask local server errors with extensions.code ([#24](https://github.com/sqaoss/flowy/issues/24)) ([f895433](https://github.com/sqaoss/flowy/commit/f895433c29e91a98d7b36d474be34fa95cc1c47b))
+
 ## [1.2.1](https://github.com/sqaoss/flowy/compare/v1.2.0...v1.2.1) (2026-04-19)
 
 
