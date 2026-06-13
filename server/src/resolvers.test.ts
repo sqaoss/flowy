@@ -773,8 +773,10 @@ describe('createResolvers', () => {
       })
 
       const results = resolvers.Query.search(null, { query: 'Auth' })
-      expect(results).toHaveLength(1)
-      expect(results[0].title).toBe('Authentication')
+      expect(results.nodes).toHaveLength(1)
+      expect(results.nodes[0].title).toBe('Authentication')
+      expect(results.truncated).toBe(false)
+      expect(results.total).toBe(1)
     })
 
     it('finds nodes by description', () => {
@@ -785,8 +787,8 @@ describe('createResolvers', () => {
       })
 
       const results = resolvers.Query.search(null, { query: 'OAuth' })
-      expect(results).toHaveLength(1)
-      expect(results[0].title).toBe('Login')
+      expect(results.nodes).toHaveLength(1)
+      expect(results.nodes[0].title).toBe('Login')
     })
 
     it('filters by type', () => {
@@ -803,8 +805,8 @@ describe('createResolvers', () => {
         query: 'Auth',
         type: 'project',
       })
-      expect(results).toHaveLength(1)
-      expect(results[0].type).toBe('project')
+      expect(results.nodes).toHaveLength(1)
+      expect(results.nodes[0].type).toBe('project')
     })
 
     it('filters by status', () => {
@@ -825,8 +827,8 @@ describe('createResolvers', () => {
         query: 'Auth',
         status: 'in_progress',
       })
-      expect(results).toHaveLength(1)
-      expect(results[0].title).toBe('Auth')
+      expect(results.nodes).toHaveLength(1)
+      expect(results.nodes[0].title).toBe('Auth')
     })
 
     it('respects limit', () => {
@@ -841,7 +843,58 @@ describe('createResolvers', () => {
         query: 'Task',
         limit: 2,
       })
-      expect(results).toHaveLength(2)
+      expect(results.nodes).toHaveLength(2)
+    })
+
+    it('signals truncation when results are capped at the limit', () => {
+      for (let i = 0; i < 5; i++) {
+        resolvers.Mutation.createNode(null, {
+          type: 'task',
+          title: `Task ${i}`,
+        })
+      }
+
+      const results = resolvers.Query.search(null, {
+        query: 'Task',
+        limit: 2,
+      })
+      expect(results.nodes).toHaveLength(2)
+      expect(results.truncated).toBe(true)
+      expect(results.total).toBe(5)
+    })
+
+    it('does not signal truncation when all results fit under the limit', () => {
+      for (let i = 0; i < 3; i++) {
+        resolvers.Mutation.createNode(null, {
+          type: 'task',
+          title: `Task ${i}`,
+        })
+      }
+
+      const results = resolvers.Query.search(null, {
+        query: 'Task',
+        limit: 50,
+      })
+      expect(results.nodes).toHaveLength(3)
+      expect(results.truncated).toBe(false)
+      expect(results.total).toBe(3)
+    })
+
+    it('does not signal truncation when results exactly equal the limit', () => {
+      for (let i = 0; i < 2; i++) {
+        resolvers.Mutation.createNode(null, {
+          type: 'task',
+          title: `Task ${i}`,
+        })
+      }
+
+      const results = resolvers.Query.search(null, {
+        query: 'Task',
+        limit: 2,
+      })
+      expect(results.nodes).toHaveLength(2)
+      expect(results.truncated).toBe(false)
+      expect(results.total).toBe(2)
     })
   })
 
@@ -958,7 +1011,9 @@ describe('createResolvers', () => {
       const results = resolvers.Query.search(null, {
         query: 'zzz_no_match',
       })
-      expect(results).toEqual([])
+      expect(results.nodes).toEqual([])
+      expect(results.truncated).toBe(false)
+      expect(results.total).toBe(0)
     })
 
     it('throws when query is shorter than 3 characters', () => {
@@ -976,23 +1031,23 @@ describe('createResolvers', () => {
     it('succeeds with 3-character query', () => {
       create(resolvers, { type: 'project', title: 'abc match' })
       const results = resolvers.Query.search(null, { query: 'abc' })
-      expect(results).toHaveLength(1)
+      expect(results.nodes).toHaveLength(1)
     })
 
     it('does not treat % as LIKE wildcard', () => {
       create(resolvers, { type: 'project', title: '100% done' })
       create(resolvers, { type: 'project', title: '100 things' })
       const results = resolvers.Query.search(null, { query: '100%' })
-      expect(results).toHaveLength(1)
-      expect(results[0].title).toBe('100% done')
+      expect(results.nodes).toHaveLength(1)
+      expect(results.nodes[0].title).toBe('100% done')
     })
 
     it('does not treat _ as LIKE wildcard', () => {
       create(resolvers, { type: 'project', title: '_est something' })
       create(resolvers, { type: 'project', title: 'Test something' })
       const results = resolvers.Query.search(null, { query: '_est' })
-      expect(results).toHaveLength(1)
-      expect(results[0].title).toBe('_est something')
+      expect(results.nodes).toHaveLength(1)
+      expect(results.nodes[0].title).toBe('_est something')
     })
   })
 
@@ -1068,6 +1123,150 @@ describe('createResolvers', () => {
         status: 'draft',
       })
       expect(updated.status).toBe('draft')
+    })
+  })
+
+  describe('status lifecycle enforcement (opt-in)', () => {
+    let strict: ReturnType<typeof createResolvers>
+
+    beforeEach(() => {
+      strict = createResolvers(db, { enforceStatusLifecycle: true })
+    })
+
+    function strictCreate(title: string): NodeGql {
+      return strict.Mutation.createNode(null, { type: 'task', title })
+    }
+
+    it('allows the canonical forward flow draft -> ... -> done', () => {
+      const node = strictCreate('Flow')
+      expect(node.status).toBe('draft')
+      let cur = strict.Mutation.updateNode(null, {
+        id: node.id,
+        status: 'pending_review',
+      })
+      expect(cur.status).toBe('pending_review')
+      cur = strict.Mutation.updateNode(null, {
+        id: node.id,
+        status: 'approved',
+      })
+      expect(cur.status).toBe('approved')
+      cur = strict.Mutation.updateNode(null, {
+        id: node.id,
+        status: 'in_progress',
+      })
+      expect(cur.status).toBe('in_progress')
+      cur = strict.Mutation.updateNode(null, { id: node.id, status: 'done' })
+      expect(cur.status).toBe('done')
+    })
+
+    it('rejects an illegal skip (draft -> done) with VALIDATION_ERROR', () => {
+      const node = strictCreate('Skip')
+      expect(() =>
+        strict.Mutation.updateNode(null, { id: node.id, status: 'done' }),
+      ).toThrow(/transition/i)
+      try {
+        strict.Mutation.updateNode(null, { id: node.id, status: 'done' })
+      } catch (e) {
+        expect((e as { extensions?: { code?: string } }).extensions?.code).toBe(
+          'VALIDATION_ERROR',
+        )
+      }
+    })
+
+    it('rejects skipping pending_review -> in_progress', () => {
+      const node = strictCreate('Skip2')
+      strict.Mutation.updateNode(null, {
+        id: node.id,
+        status: 'pending_review',
+      })
+      expect(() =>
+        strict.Mutation.updateNode(null, {
+          id: node.id,
+          status: 'in_progress',
+        }),
+      ).toThrow(/transition/i)
+    })
+
+    it('allows cancelling from an active state', () => {
+      const node = strictCreate('Cancel')
+      strict.Mutation.updateNode(null, {
+        id: node.id,
+        status: 'pending_review',
+      })
+      const cur = strict.Mutation.updateNode(null, {
+        id: node.id,
+        status: 'cancelled',
+      })
+      expect(cur.status).toBe('cancelled')
+    })
+
+    it('allows blocking from in_progress and resuming', () => {
+      const node = strictCreate('Block')
+      strict.Mutation.updateNode(null, {
+        id: node.id,
+        status: 'pending_review',
+      })
+      strict.Mutation.updateNode(null, { id: node.id, status: 'approved' })
+      strict.Mutation.updateNode(null, { id: node.id, status: 'in_progress' })
+      let cur = strict.Mutation.updateNode(null, {
+        id: node.id,
+        status: 'blocked',
+      })
+      expect(cur.status).toBe('blocked')
+      cur = strict.Mutation.updateNode(null, {
+        id: node.id,
+        status: 'in_progress',
+      })
+      expect(cur.status).toBe('in_progress')
+    })
+
+    it('rejects blocking directly from draft', () => {
+      const node = strictCreate('BlockEarly')
+      expect(() =>
+        strict.Mutation.updateNode(null, { id: node.id, status: 'blocked' }),
+      ).toThrow(/transition/i)
+    })
+
+    it('allows reopening done -> in_progress', () => {
+      const node = strictCreate('Reopen')
+      strict.Mutation.updateNode(null, {
+        id: node.id,
+        status: 'pending_review',
+      })
+      strict.Mutation.updateNode(null, { id: node.id, status: 'approved' })
+      strict.Mutation.updateNode(null, { id: node.id, status: 'in_progress' })
+      strict.Mutation.updateNode(null, { id: node.id, status: 'done' })
+      const cur = strict.Mutation.updateNode(null, {
+        id: node.id,
+        status: 'in_progress',
+      })
+      expect(cur.status).toBe('in_progress')
+    })
+
+    it('allows a same-status no-op even under enforcement', () => {
+      const node = strictCreate('NoOp')
+      const cur = strict.Mutation.updateNode(null, {
+        id: node.id,
+        status: 'draft',
+      })
+      expect(cur.status).toBe('draft')
+    })
+
+    it('still validates the status vocabulary', () => {
+      const node = strictCreate('Vocab')
+      expect(() =>
+        strict.Mutation.updateNode(null, { id: node.id, status: 'bogus' }),
+      ).toThrow(/Invalid status/)
+    })
+
+    it('does NOT enforce transitions when the flag is off (default)', () => {
+      // default `resolvers` (no enforcement) permits the illegal skip
+      const node = create(resolvers, { type: 'task', title: 'Default' })
+      const updated = resolvers.Mutation.updateNode(null, {
+        id: node.id,
+        status: 'done',
+      })
+      expect(updated.status).toBe('done')
     })
   })
 
@@ -1216,7 +1415,7 @@ describe('createResolvers', () => {
         query: 'Test',
         limit: 0,
       })
-      expect(results).toEqual([])
+      expect(results.nodes).toEqual([])
     })
   })
 

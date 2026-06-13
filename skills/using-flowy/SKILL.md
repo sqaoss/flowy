@@ -154,6 +154,9 @@ flowy status <id> done
 flowy search "query" --type task --status draft --limit 10
 flowy tree <id> --depth 3                    # show subtree from any entity
 ```
+`search` prints `{ nodes, truncated, total }`. When `truncated` is `true` the
+results were capped at `--limit` (default 50) and `total` more matches exist —
+raise `--limit` to see them.
 
 ### Import and Export
 ```bash

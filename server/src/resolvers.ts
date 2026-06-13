@@ -81,6 +81,18 @@ export interface SubtreeNodeGql extends NodeGql {
   relation: string
 }
 
+/**
+ * Search results plus truncation metadata (F32). `nodes` is capped at `limit`;
+ * `total` is the unbounded match count and `truncated` is true when `total`
+ * exceeds the returned page — letting the CLI show a clear "results truncated"
+ * marker instead of silently dropping matches at the default cap.
+ */
+export interface SearchResultGql {
+  nodes: NodeGql[]
+  truncated: boolean
+  total: number
+}
+
 interface SubtreeRow extends NodeRow {
   parent_id: string
   depth: number
@@ -110,6 +122,36 @@ function assertValidStatus(status: string): void {
   if (!VALID_STATUSES.has(status)) {
     throw validationError(
       `Invalid status: ${status}. Must be one of: ${[...VALID_STATUSES].join(', ')}`,
+    )
+  }
+}
+
+/**
+ * Allowed status transitions for the OPT-IN lifecycle enforcement
+ * (`FLOWY_ENFORCE_STATUS_LIFECYCLE`). The canonical forward flow is
+ * `draft → pending_review → approved → in_progress → done`; `blocked` and
+ * `cancelled` are reachable from active states and recoverable back into the
+ * flow. A same-status update is always a no-op and never checked here. When
+ * enforcement is OFF (the default) this map is unused and any vocabulary-valid
+ * status is accepted, preserving the prior behaviour.
+ */
+const ALLOWED_TRANSITIONS: Record<string, Set<string>> = {
+  draft: new Set(['pending_review', 'cancelled']),
+  pending_review: new Set(['approved', 'draft', 'cancelled']),
+  approved: new Set(['in_progress', 'pending_review', 'cancelled']),
+  in_progress: new Set(['done', 'blocked', 'cancelled']),
+  done: new Set(['in_progress']),
+  blocked: new Set(['in_progress', 'cancelled']),
+  cancelled: new Set(['draft']),
+}
+
+function assertValidTransition(from: string, to: string): void {
+  if (from === to) return
+  if (!ALLOWED_TRANSITIONS[from]?.has(to)) {
+    throw validationError(
+      `Illegal status transition: ${from} → ${to}. Allowed from "${from}": ${
+        [...(ALLOWED_TRANSITIONS[from] ?? [])].join(', ') || '(none)'
+      }`,
     )
   }
 }
@@ -216,7 +258,18 @@ function prefixedCols() {
     .join(', ')
 }
 
-export function createResolvers(db: Db) {
+export interface ResolverOptions {
+  /**
+   * Enforce the canonical status lifecycle on `updateNode` status changes.
+   * OFF by default — when false (the default) any vocabulary-valid status is
+   * accepted, matching pre-F32 behaviour. Wired from
+   * `FLOWY_ENFORCE_STATUS_LIFECYCLE` in `index.ts`.
+   */
+  enforceStatusLifecycle?: boolean
+}
+
+export function createResolvers(db: Db, opts: ResolverOptions = {}) {
+  const enforceStatusLifecycle = opts.enforceStatusLifecycle ?? false
   return {
     Query: {
       node: (_: unknown, args: { id: string }) => {
@@ -386,7 +439,7 @@ export function createResolvers(db: Db) {
           status?: string
           limit?: number
         },
-      ) => {
+      ): SearchResultGql => {
         if (args.query.trim().length < 3) {
           throw validationError('Search query must be at least 3 characters')
         }
@@ -403,13 +456,23 @@ export function createResolvers(db: Db) {
           conditions.push('status = ?')
           params.push(args.status)
         }
+        const where = conditions.join(' AND ')
         const limit = args.limit ?? 50
+        // Fetch one extra row so we can tell "exactly at the cap" from
+        // "more matches exist" without a second COUNT for the common case.
         const rows = db.raw
-          .query(
-            `SELECT ${NODE_COLS} FROM nodes WHERE ${conditions.join(' AND ')} LIMIT ?`,
-          )
-          .all(...params, limit) as NodeRow[]
-        return selectNodes(rows)
+          .query(`SELECT ${NODE_COLS} FROM nodes WHERE ${where} LIMIT ?`)
+          .all(...params, limit + 1) as NodeRow[]
+        const truncated = rows.length > limit
+        const page = truncated ? rows.slice(0, limit) : rows
+        const total = truncated
+          ? (
+              db.raw
+                .query(`SELECT COUNT(*) AS c FROM nodes WHERE ${where}`)
+                .get(...params) as { c: number }
+            ).c
+          : page.length
+        return { nodes: selectNodes(page), truncated, total }
       },
 
       // Audit history for a node, newest first. Shaped to match the SaaS
@@ -507,7 +570,12 @@ export function createResolvers(db: Db) {
         if (args.description != null && !args.description.trim()) {
           throw validationError('Description cannot be empty')
         }
-        if (args.status != null) assertValidStatus(args.status)
+        if (args.status != null) {
+          assertValidStatus(args.status)
+          if (enforceStatusLifecycle) {
+            assertValidTransition(existing.status, args.status)
+          }
+        }
 
         const next: NodeRow = {
           ...existing,

@@ -52,6 +52,16 @@ export const typeDefs = /* GraphQL */ `
     relation: String!
   }
 
+  # Search results plus truncation metadata (F32). \`nodes\` is the page capped
+  # at the requested \`limit\`; \`total\` is the unbounded match count and
+  # \`truncated\` is true when more matches exist than were returned, so the CLI
+  # can surface a "results truncated" marker instead of silently dropping rows.
+  type SearchResult {
+    nodes: [Node!]!
+    truncated: Boolean!
+    total: Int!
+  }
+
   type Query {
     node(id: String!): Node
     nodes(type: String): [Node!]!
@@ -59,7 +69,12 @@ export const typeDefs = /* GraphQL */ `
     subtree(nodeId: String!, relation: String, maxDepth: Int): [SubtreeNode!]!
     edges(nodeId: String!, relation: String!, direction: String): [Node!]!
     readyTasks(projectId: String): [Node!]!
-    search(query: String!, type: String, status: String, limit: Int): [Node!]!
+    search(
+      query: String!
+      type: String
+      status: String
+      limit: Int
+    ): SearchResult!
     auditLog(nodeId: String!, limit: Int): [AuditEntry!]!
   }
 
