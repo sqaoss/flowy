@@ -33,13 +33,19 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
       - run: bun install --frozen-lockfile
-      # Root CLI unit suite (mocked transport) with coverage. `test:coverage`
-      # runs the same suite as `test` plus a v8 report; the config carries a
-      # ratchet threshold (F38), so this step also guards against regressions.
+      # Root CLI unit suite (mocked transport) on bun, as the release job runs it.
+      - run: bun run test
+      # The same suite plus a v8 report; the config carries a ratchet threshold
+      # (F38), so this step also guards against regressions. It needs node, set
+      # up above: without node `bun run` falls back to bun, where v8 coverage
+      # under-reports, varies between runs and would trip the ratchet.
       - run: bun run test:coverage
       # Server suite — includes the P1-1 CLI/local-server contract guard.
       - run: cd server && bun install --frozen-lockfile

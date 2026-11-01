@@ -50,10 +50,10 @@
     "audit": "bun audit",
     "audit:prod": "bun audit --production --json",
     "check": "biome check --write .",
-    "test": "vitest run",
-    "test:watch": "vitest",
+    "test": "bunx --bun vitest run",
+    "test:watch": "bunx --bun vitest",
     "test:coverage": "vitest run --coverage",
-    "test:e2e": "vitest run --config vitest.config.e2e.ts",
+    "test:e2e": "bunx --bun vitest run --config vitest.config.e2e.ts",
     "sdl": "bun scripts/print-sdl.ts",
     "typecheck": "tsc --noEmit",
     "prepare": "husky"

@@ -10,8 +10,9 @@ CLI for Flowy (`@sqaoss/flowy` on npm) — a project management backend for AI c
 
 ```bash
 bun run cli -- <command>                      # Run CLI locally
-bun run test                                  # Run tests (Vitest)
-bunx vitest run src/util/config.test.ts       # Run a single test file
+bun run test                                  # Run tests (Vitest on bun)
+bunx --bun vitest run src/util/config.test.ts # Run a single test file
+bun run test:coverage                         # Coverage ratchet (needs node on PATH: v8 coverage is unreliable on bun)
 bun run check                                 # Biome lint + format (auto-fixes)
 bun run typecheck                             # TypeScript type checking
 ```
