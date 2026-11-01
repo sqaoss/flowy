@@ -1,4 +1,4 @@
-FROM oven/bun:1.3.11
+FROM oven/bun:1.4.4
 WORKDIR /app
 RUN bun init -y && bun add @sqaoss/flowy
 WORKDIR /app/node_modules/@sqaoss/flowy/server
