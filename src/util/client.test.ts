@@ -20,11 +20,16 @@ function httpError(status: number, body = '<html>error</html>') {
   }
 }
 
+let apiKey: string
+
 beforeEach(() => {
+  apiKey = 'test-key'
+  // Tests change `apiKey` instead of calling vi.doMock again: vitest resolves
+  // consecutive doMocks in parallel, so two on one path race and either can win.
   vi.doMock('./config.ts', () => ({
     getConfig: () => ({
       apiUrl: 'http://test/graphql',
-      apiKey: 'test-key',
+      apiKey,
     }),
   }))
 })
@@ -104,9 +109,7 @@ describe('graphql client', () => {
   })
 
   test('omits Authorization header when no apiKey configured', async () => {
-    vi.doMock('./config.ts', () => ({
-      getConfig: () => ({ apiUrl: 'http://test/graphql', apiKey: '' }),
-    }))
+    apiKey = ''
 
     const mockFetch = vi
       .fn()
