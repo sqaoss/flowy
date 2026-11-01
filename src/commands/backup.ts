@@ -25,7 +25,7 @@ export function resolveDbPath(dbOpt?: string): string {
  * cleanly if `src` is not a valid SQLite database, which doubles as validation.
  *
  * Runs in a `bun` subprocess so this module never imports `bun:sqlite`
- * (unavailable under the Node-based unit-test runner); the CLI itself always
+ * (unavailable when the unit suite runs on node for coverage); the CLI itself always
  * runs under bun, so the subprocess shares the same runtime.
  */
 function vacuumInto(src: string, dest: string): void {

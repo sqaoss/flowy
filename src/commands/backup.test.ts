@@ -8,8 +8,8 @@ let mockOutput: ReturnType<typeof vi.fn>
 let mockOutputError: ReturnType<typeof vi.fn>
 let workDir: string
 
-// `bun:sqlite` is unavailable under the Node-based root test runner, so these
-// tests drive a real `bun` subprocess to seed and read SQLite files. That keeps
+// `bun:sqlite` is unavailable when this suite runs on node for coverage, so
+// these tests drive a real `bun` subprocess to seed and read SQLite files. That keeps
 // the row-level assertions genuine (open the backup, compare rows) without
 // importing `bun:sqlite` into Node — exactly how the CLI runs at runtime.
 
